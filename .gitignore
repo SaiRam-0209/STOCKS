@@ -1,0 +1,18 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Distribution/build
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+
+# Cached data & trained models
+cache/
+models/*.joblib
