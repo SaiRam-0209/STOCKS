@@ -44,11 +44,21 @@ def main():
         print(f"  [{bar}] {pct*100:5.1f}%  {message}", flush=True)
 
     universe = "All NSE"
-    if args.full:
+
+    # If no saved model exists yet → always do full history first
+    from project.ml.model import BreakoutRanker, MODEL_DIR
+    import os
+    model_path = os.path.join(MODEL_DIR, "breakout_ranker_all_nse.joblib")
+    first_run = not os.path.exists(model_path)
+
+    if args.full or first_run:
+        if first_run:
+            print("  No existing model found — running FULL history training...")
         model, metrics = train_model(
             symbols, universe=universe, progress_callback=progress
         )
     else:
+        # Model exists → 12-month rolling update (fast nightly)
         model, metrics = update_model(
             symbols, universe=universe, progress_callback=progress
         )
