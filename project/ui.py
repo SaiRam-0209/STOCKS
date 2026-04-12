@@ -10,7 +10,7 @@ from project.strategy.filter import compute_score, build_reason
 from project.strategy.signals import enrich_candidates
 from project.backtest.engine import run_backtest
 from project.ml.predictor import predict_boom_stocks, train_model, update_model
-from project.ml.model import BoomPredictor as _BoomPredictor
+from project.ml.model import BreakoutRanker as _BoomPredictor
 
 # --- Page config ---
 st.set_page_config(page_title="AI Stock Scanner", page_icon="🚀", layout="wide")
@@ -75,10 +75,11 @@ if mode == "📊 Live Scan":
 # =====================================================
 if mode == "🤖 AI Boom Predictor":
     st.markdown(f"""
-    **Scanning {universe_name} ({len(symbols)} stocks) with 3 layers of AI intelligence:**
+    **Scanning {universe_name} ({len(symbols)} stocks) for high-quality gap breakout trades:**
     - 🌍 **Global Macro** — US markets, crude oil, gold, VIX, USD/INR, Asian markets
     - 📰 **News Sentiment** — Real-time RSS feeds analyzed with financial NLP
-    - 📈 **Technical + ML** — XGBoost + Neural Network ensemble on 19 features
+    - 📈 **BreakoutRanker** — XGBoost Learning-to-Rank on 15 breakout-quality features.
+      Ranks gap stocks by *expected move strength* (+1/+2/+3×), not just win probability.
     """)
 
     # --- Check if model is stale ---
@@ -199,16 +200,17 @@ if mode == "🤖 AI Boom Predictor":
                     data.append({
                         "Rank": c.index_rank,
                         "Stock": c.symbol.replace(".NS", ""),
-                        "Boom %": c.boom_probability,
+                        "Score": c.boom_probability,
+                        "Move": getattr(c, "expected_move", "?"),
                         "Confidence": c.confidence,
                         "Trade Type": trade_label,
-                        "Sentiment": c.sentiment_label,
-                        "Sent. Score": c.sentiment_score,
-                        "Sector Score": c.sector_score,
-                        "RSI": c.technical_summary.get("rsi", ""),
-                        "5D Return": f"{c.technical_summary.get('returns_5d', 0):.1f}%",
+                        "Gap %": f"{c.technical_summary.get('gap_pct', 0):+.1f}%",
                         "Rel Vol": c.technical_summary.get("rel_vol", ""),
-                        "EMA Bull": "Yes" if c.technical_summary.get("ema_bullish") else "No",
+                        "Gap/ATR": f"{c.technical_summary.get('gap_vs_atr', 0):.2f}",
+                        "EMA Trend": "Up" if c.technical_summary.get("ema_bullish") else "Down",
+                        "RSI": c.technical_summary.get("rsi", ""),
+                        "5D Ret": f"{c.technical_summary.get('returns_5d', 0):.1f}%",
+                        "Sentiment": c.sentiment_label,
                     })
                 if not data:
                     st.info("No candidates in this category.")
@@ -219,9 +221,10 @@ if mode == "🤖 AI Boom Predictor":
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "Boom %": st.column_config.ProgressColumn(
-                            "Boom Probability", min_value=0, max_value=100, format="%.1f%%"
+                        "Score": st.column_config.ProgressColumn(
+                            "Breakout Score", min_value=0, max_value=100, format="%.0f"
                         ),
+                        "Move": st.column_config.TextColumn("Expected Move"),
                         "Rank": st.column_config.NumberColumn("Index Rank", format="%d"),
                     },
                 )

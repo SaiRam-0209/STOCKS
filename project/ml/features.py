@@ -1,175 +1,331 @@
-"""ML feature pipeline: combines technical, sentiment, and macro features."""
+"""ML feature pipeline: breakout-quality features for ORB gap trade ranking.
+
+Replaces the old generic daily features (RSI, EMA crossover, MACD-style)
+with features specifically designed to measure breakout quality at the
+exact moment a gap trade is entered.
+
+All features are computable from data known BEFORE market open, so there
+is zero look-ahead bias in live prediction.
+"""
 
 import numpy as np
 import pandas as pd
-from project.features.indicators import (
-    gap_percentage, relative_volume, vwap, ema, rsi, atr,
-)
+from project.features.indicators import gap_percentage, relative_volume, ema, atr
+
+# Live prediction filter (same as backtest engine)
+GAP_THRESHOLD = 2.0
+REL_VOL_THRESHOLD = 1.5
+
+# Slightly looser thresholds for training to capture more examples
+TRAIN_GAP_THRESHOLD = 1.5
+TRAIN_REL_VOL_THRESHOLD = 1.2
+
+BREAKOUT_FEATURE_COLUMNS = [
+    # Gap characteristics
+    "gap_pct",            # Gap size in % (signed: +ve = gap-up, -ve = gap-down)
+    "gap_abs",            # Absolute gap magnitude
+    "gap_vs_atr",         # Gap / ATR — how significant is this gap vs normal volatility
+    "gap_percentile",     # Where this gap ranks vs last 252 trading days (0–1)
+    "gap_trend_aligned",  # 1 if gap direction matches the 20d EMA trend
+    # Volume dynamics
+    "rel_vol",            # Volume vs 10d average
+    "vol_rank_20d",       # Volume percentile in last 20 days (0–1)
+    "vol_acceleration",   # Today vol / 3d avg vol — sudden spike detection
+    # Price structure & trend
+    "open_vs_ema20",      # % distance of today's open from EMA20
+    "ema20_slope",        # EMA20 slope over last 5 days (trend momentum)
+    "pre_gap_momentum",   # 3d return before gap day (stock already running?)
+    # Volatility & compression
+    "atr_pct",            # ATR as % of price
+    "range_compression",  # ATR5 / ATR20 — lower = more compressed = sharper breakout expected
+    # External context
+    "macro_score",
+    "sector_score",
+]
 
 
-def build_ml_features_for_day(daily_df: pd.DataFrame, day_idx: int,
-                              sentiment_score: float = 0.0,
-                              macro_score: float = 0.0,
-                              sector_score: float = 0.0) -> dict | None:
-    """Build a single feature vector for one stock on one day.
+def build_breakout_features_for_day(
+    daily_df: pd.DataFrame,
+    day_idx: int,
+    macro_score: float = 0.0,
+    sector_score: float = 0.0,
+    _precomputed_gap_percentile: float | None = None,
+) -> dict | None:
+    """Build breakout-quality features for one gap day.
 
     Args:
-        daily_df: Full daily OHLCV DataFrame for the stock.
-        day_idx: Index position of the target day in daily_df.
-        sentiment_score: News sentiment score (-1 to 1).
-        macro_score: Global macro score (-10 to 10).
+        daily_df: Full daily OHLCV DataFrame.
+        day_idx: Index of the day in daily_df.
+        macro_score: Global macro score.
         sector_score: Sector rotation score.
+        _precomputed_gap_percentile: Optional precomputed value (pass from
+            build_breakout_training_data for speed — avoids recomputing the
+            252-day window for every sample).
 
     Returns:
-        Dict of features, or None if insufficient data.
+        Feature dict, or None if insufficient history.
     """
-    if day_idx < 20 or day_idx >= len(daily_df):
+    if day_idx < 25 or day_idx >= len(daily_df):
         return None
 
     row = daily_df.iloc[day_idx]
     prev = daily_df.iloc[day_idx - 1]
 
-    close = float(row["Close"])
+    open_px = float(row["Open"])
     prev_close = float(prev["Close"])
     volume = float(row["Volume"])
 
-    # --- Price features ---
-    gap_pct = gap_percentage(float(row["Open"]), prev_close)
-    daily_return = ((close - prev_close) / prev_close) * 100
-    daily_range = ((float(row["High"]) - float(row["Low"])) / prev_close) * 100
+    if prev_close <= 0 or open_px <= 0:
+        return None
 
-    # --- Volume features ---
+    # ── Gap ─────────────────────────────────────────────
+    gap_pct = gap_percentage(open_px, prev_close)
+    gap_abs = abs(gap_pct)
+
+    # ATR from data up to (but not including) today
+    hist_df = daily_df.iloc[:day_idx]
+    atr_series = atr(hist_df, 14)
+    if len(atr_series) < 14:
+        return None
+    current_atr = float(atr_series.iloc[-1])
+    if current_atr <= 0:
+        return None
+
+    atr_pct = (current_atr / prev_close) * 100
+    gap_vs_atr = gap_abs / atr_pct if atr_pct > 0 else 0.0
+
+    # Gap percentile vs last 252 days (expensive if called per-sample; pass
+    # _precomputed_gap_percentile from build_breakout_training_data instead)
+    if _precomputed_gap_percentile is not None:
+        gap_percentile = _precomputed_gap_percentile
+    else:
+        start = max(1, day_idx - 252)
+        hist_gaps = [
+            abs(gap_percentage(
+                float(daily_df["Open"].iloc[j]),
+                float(daily_df["Close"].iloc[j - 1]),
+            ))
+            for j in range(start, day_idx)
+            if float(daily_df["Close"].iloc[j - 1]) > 0
+        ]
+        gap_percentile = (
+            float(np.searchsorted(np.sort(hist_gaps), gap_abs) / len(hist_gaps))
+            if hist_gaps else 0.5
+        )
+
+    # Gap aligned with 20d trend?
+    close_hist = daily_df["Close"].iloc[:day_idx]
+    ema20 = ema(close_hist, 20)
+    ema20_now = float(ema20.iloc[-1])
+    ema20_5ago = float(ema20.iloc[-5]) if len(ema20) >= 5 else ema20_now
+    trend_up = ema20_now > ema20_5ago
+    gap_trend_aligned = 1.0 if (
+        (gap_pct > 0 and trend_up) or (gap_pct < 0 and not trend_up)
+    ) else 0.0
+
+    # ── Volume ───────────────────────────────────────────
     avg_vol_10 = float(daily_df["Volume"].iloc[day_idx - 10:day_idx].mean())
-    avg_vol_5 = float(daily_df["Volume"].iloc[day_idx - 5:day_idx].mean())
     rel_vol = relative_volume(volume, avg_vol_10)
-    vol_trend = (avg_vol_5 / avg_vol_10) if avg_vol_10 > 0 else 1.0
 
-    # --- Moving averages ---
-    close_series = daily_df["Close"].iloc[:day_idx + 1]
-    ema_9 = float(ema(close_series, 9).iloc[-1])
-    ema_20 = float(ema(close_series, 20).iloc[-1])
-    ema_50 = float(ema(close_series, 50).iloc[-1]) if day_idx >= 50 else ema_20
-    sma_20 = float(close_series.tail(20).mean())
+    vol_20d = daily_df["Volume"].iloc[day_idx - 20:day_idx]
+    vol_rank_20d = float((vol_20d < volume).sum()) / len(vol_20d) if len(vol_20d) > 0 else 0.5
 
-    price_vs_ema9 = ((close - ema_9) / ema_9) * 100
-    price_vs_ema20 = ((close - ema_20) / ema_20) * 100
-    ema_bullish = 1.0 if ema_9 > ema_20 else 0.0
+    avg_vol_3 = float(daily_df["Volume"].iloc[day_idx - 3:day_idx].mean())
+    vol_acceleration = min(volume / avg_vol_3, 20.0) if avg_vol_3 > 0 else 1.0
 
-    # --- VWAP proxy (using daily typical price) ---
-    tp = (float(row["High"]) + float(row["Low"]) + close) / 3
-    above_tp = 1.0 if close > tp else 0.0
+    # ── Price structure ──────────────────────────────────
+    open_vs_ema20 = ((open_px - ema20_now) / ema20_now) * 100 if ema20_now > 0 else 0.0
+    ema20_slope = ((ema20_now - ema20_5ago) / ema20_5ago) * 100 if ema20_5ago > 0 else 0.0
 
-    # --- RSI ---
-    rsi_series = rsi(close_series, 14)
-    current_rsi = float(rsi_series.iloc[-1]) if len(rsi_series) > 0 else 50.0
+    pre_gap_momentum = 0.0
+    if day_idx >= 4:
+        close_3ago = float(daily_df["Close"].iloc[day_idx - 4])
+        if close_3ago > 0:
+            pre_gap_momentum = ((prev_close - close_3ago) / close_3ago) * 100
 
-    # --- ATR (volatility) ---
-    atr_series = atr(daily_df.iloc[:day_idx + 1], 14)
-    current_atr = float(atr_series.iloc[-1]) if len(atr_series) > 0 else 0.0
-    atr_pct = (current_atr / close) * 100 if close > 0 else 0.0
-
-    # --- Momentum features ---
-    returns_5d = ((close - float(daily_df["Close"].iloc[day_idx - 5])) /
-                  float(daily_df["Close"].iloc[day_idx - 5])) * 100
-    returns_10d = ((close - float(daily_df["Close"].iloc[day_idx - 10])) /
-                   float(daily_df["Close"].iloc[day_idx - 10])) * 100
-
-    # --- Pattern features ---
-    # Count green/red days in last 5
-    last_5_returns = []
-    for j in range(1, 6):
-        if day_idx - j >= 0:
-            c = float(daily_df["Close"].iloc[day_idx - j + 1])
-            p = float(daily_df["Close"].iloc[day_idx - j])
-            last_5_returns.append(1 if c > p else 0)
-    green_days_5 = sum(last_5_returns)
-
-    # Higher highs / higher lows (trend)
-    highs = [float(daily_df["High"].iloc[day_idx - i]) for i in range(3)]
-    lows = [float(daily_df["Low"].iloc[day_idx - i]) for i in range(3)]
-    higher_highs = 1.0 if highs[0] > highs[1] > highs[2] else 0.0
-    higher_lows = 1.0 if lows[0] > lows[1] > lows[2] else 0.0
+    # ── Volatility compression ───────────────────────────
+    atr5_series = atr(hist_df, 5)
+    atr5 = float(atr5_series.iloc[-1]) if len(atr5_series) >= 5 else current_atr
+    range_compression = atr5 / current_atr if current_atr > 0 else 1.0
 
     return {
-        # Price
         "gap_pct": round(gap_pct, 4),
-        "daily_return": round(daily_return, 4),
-        "daily_range": round(daily_range, 4),
-        # Volume
+        "gap_abs": round(gap_abs, 4),
+        "gap_vs_atr": round(gap_vs_atr, 4),
+        "gap_percentile": round(gap_percentile, 4),
+        "gap_trend_aligned": gap_trend_aligned,
         "rel_vol": round(rel_vol, 4),
-        "vol_trend": round(vol_trend, 4),
-        # Moving averages
-        "price_vs_ema9": round(price_vs_ema9, 4),
-        "price_vs_ema20": round(price_vs_ema20, 4),
-        "ema_bullish": ema_bullish,
-        # RSI / ATR
-        "rsi": round(current_rsi, 4),
+        "vol_rank_20d": round(vol_rank_20d, 4),
+        "vol_acceleration": round(vol_acceleration, 4),
+        "open_vs_ema20": round(open_vs_ema20, 4),
+        "ema20_slope": round(ema20_slope, 4),
+        "pre_gap_momentum": round(pre_gap_momentum, 4),
         "atr_pct": round(atr_pct, 4),
-        # Momentum
-        "returns_5d": round(returns_5d, 4),
-        "returns_10d": round(returns_10d, 4),
-        "green_days_5": green_days_5,
-        # Patterns
-        "higher_highs": higher_highs,
-        "higher_lows": higher_lows,
-        "above_typical_price": above_tp,
-        # External
-        "sentiment_score": round(sentiment_score, 4),
+        "range_compression": round(range_compression, 4),
         "macro_score": round(macro_score, 4),
         "sector_score": round(sector_score, 4),
     }
 
 
-FEATURE_COLUMNS = [
-    "gap_pct", "daily_return", "daily_range", "rel_vol", "vol_trend",
-    "price_vs_ema9", "price_vs_ema20", "ema_bullish", "rsi", "atr_pct",
-    "returns_5d", "returns_10d", "green_days_5", "higher_highs", "higher_lows",
-    "above_typical_price", "sentiment_score", "macro_score", "sector_score",
-]
+def compute_breakout_label(daily_df: pd.DataFrame, day_idx: int) -> float:
+    """Compute how strongly the stock moved after the gap, in multiples of the gap.
+
+    For LONG (gap-up):  label = (day_high - day_open) / gap_amount
+    For SHORT (gap-down): label = (day_open - day_low) / |gap_amount|
+
+    Interpretation:
+        >= 3.0 → exceptional: moved 3× gap (ORB target at 2R comfortably exceeded)
+        >= 2.0 → strong: ORB target hit
+        >= 1.0 → decent: halfway to ORB target
+           0.0 → no move
+        <  0.0 → reversal
+
+    Capped at [-2.0, 6.0].
+    """
+    row = daily_df.iloc[day_idx]
+    prev_close = float(daily_df.iloc[day_idx - 1]["Close"])
+
+    open_px = float(row["Open"])
+    high_px = float(row["High"])
+    low_px = float(row["Low"])
+
+    gap_amount = open_px - prev_close
+    if abs(gap_amount) < 1e-6:
+        return 0.0
+
+    if gap_amount > 0:
+        move = high_px - open_px
+    else:
+        move = open_px - low_px
+        gap_amount = abs(gap_amount)
+
+    return float(np.clip(move / gap_amount, -2.0, 6.0))
 
 
-def build_training_data(daily_df: pd.DataFrame,
-                        sentiment_score: float = 0.0,
-                        macro_score: float = 0.0,
-                        sector_score: float = 0.0,
-                        target_horizon: int = 1,
-                        boom_threshold: float = 3.0) -> tuple[np.ndarray, np.ndarray]:
-    """Build training dataset from historical daily data.
+def build_breakout_training_data(
+    daily_df: pd.DataFrame,
+    gap_min: float = TRAIN_GAP_THRESHOLD,
+    rel_vol_min: float = TRAIN_REL_VOL_THRESHOLD,
+) -> list[tuple[str, np.ndarray, float]]:
+    """Extract (date, features, label) tuples for every qualifying gap day.
 
-    For each day, features are computed from data up to that day,
-    and the label is whether the stock "boomed" (gained >= threshold%)
-    in the next `target_horizon` days.
-
-    Args:
-        daily_df: Historical daily OHLCV data.
-        sentiment_score: Default sentiment (0 for historical).
-        macro_score: Default macro score (0 for historical).
-        sector_score: Default sector score (0 for historical).
-        target_horizon: Number of days forward to check.
-        boom_threshold: Min % gain to classify as "boom".
+    Only includes days where gap >= gap_min% AND relative volume >= rel_vol_min.
+    This focuses the dataset entirely on actual ORB trade scenarios.
 
     Returns:
-        (X, y) where X is feature matrix, y is binary labels.
+        List of (date_str, feature_vector, label) for grouping by date
+        in train_model().
     """
-    features_list = []
-    labels = []
+    if len(daily_df) < 30:
+        return []
 
-    for i in range(20, len(daily_df) - target_horizon):
-        feat = build_ml_features_for_day(daily_df, i, sentiment_score,
-                                          macro_score, sector_score)
+    # Precompute all daily gaps (vectorized) to speed up gap_percentile calc
+    opens = daily_df["Open"].values
+    closes = daily_df["Close"].values
+    all_gaps_abs = np.where(
+        closes[:-1] > 0,
+        np.abs((opens[1:] - closes[:-1]) / closes[:-1] * 100),
+        0.0,
+    )  # all_gaps_abs[i] = gap for daily_df.iloc[i+1]
+
+    samples: list[tuple[str, np.ndarray, float]] = []
+
+    for i in range(25, len(daily_df)):
+        prev_close = closes[i - 1]
+        if prev_close <= 0:
+            continue
+
+        gap_pct_raw = (opens[i] - prev_close) / prev_close * 100
+        gap_abs_val = abs(gap_pct_raw)
+        if gap_abs_val < gap_min:
+            continue
+
+        avg_vol_10 = float(daily_df["Volume"].iloc[i - 10:i].mean())
+        if avg_vol_10 <= 0:
+            continue
+        rel_vol_val = float(daily_df["Volume"].iloc[i]) / avg_vol_10
+        if rel_vol_val < rel_vol_min:
+            continue
+
+        # Fast gap_percentile using precomputed array + binary search
+        start = max(0, i - 1 - 252)
+        window = all_gaps_abs[start:i - 1]
+        gap_percentile = (
+            float(np.searchsorted(np.sort(window), gap_abs_val) / len(window))
+            if len(window) > 0 else 0.5
+        )
+
+        feat = build_breakout_features_for_day(
+            daily_df, i,
+            _precomputed_gap_percentile=gap_percentile,
+        )
         if feat is None:
             continue
 
-        # Label: did stock gain >= threshold% in next N days?
-        current_close = float(daily_df["Close"].iloc[i])
-        future_high = float(daily_df["High"].iloc[i + 1:i + 1 + target_horizon].max())
-        future_return = ((future_high - current_close) / current_close) * 100
+        label = compute_breakout_label(daily_df, i)
+        feature_vector = np.array(
+            [feat[col] for col in BREAKOUT_FEATURE_COLUMNS], dtype=np.float32
+        )
 
-        row = [feat[col] for col in FEATURE_COLUMNS]
-        # Skip rows with any NaN/inf — these come from insufficient history
-        if any(v != v or abs(v) == float('inf') for v in row):
+        if not np.all(np.isfinite(feature_vector)):
             continue
-        features_list.append(row)
-        labels.append(1 if future_return >= boom_threshold else 0)
 
-    return np.array(features_list), np.array(labels)
+        date_str = str(daily_df.index[i].date())
+        samples.append((date_str, feature_vector, label))
+
+    return samples
+
+
+def label_to_expected_move(score: float) -> str:
+    """Convert ranker score to a human-readable expected move category."""
+    # Score from the ranker is shifted by +2 from the raw label
+    label = score - 2.0
+    if label >= 3.0:
+        return "+3"
+    elif label >= 2.0:
+        return "+2"
+    elif label >= 1.0:
+        return "+1"
+    elif label >= 0.0:
+        return "0"
+    elif label >= -1.0:
+        return "-1"
+    else:
+        return "-2"
+
+
+# ─── Legacy compatibility ─────────────────────────────────────────────────────
+# These keep predictor.py's update_model and any other callers working.
+
+FEATURE_COLUMNS = BREAKOUT_FEATURE_COLUMNS
+
+
+def build_ml_features_for_day(
+    daily_df: pd.DataFrame,
+    day_idx: int,
+    sentiment_score: float = 0.0,
+    macro_score: float = 0.0,
+    sector_score: float = 0.0,
+) -> dict | None:
+    """Legacy wrapper — redirects to build_breakout_features_for_day."""
+    return build_breakout_features_for_day(daily_df, day_idx, macro_score, sector_score)
+
+
+def build_training_data(
+    daily_df: pd.DataFrame,
+    sentiment_score: float = 0.0,
+    macro_score: float = 0.0,
+    sector_score: float = 0.0,
+    target_horizon: int = 1,
+    boom_threshold: float = 3.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Legacy wrapper for update_model compatibility.
+
+    Returns (X, y) where y is float breakout labels (not binary).
+    """
+    samples = build_breakout_training_data(daily_df)
+    if not samples:
+        n = len(BREAKOUT_FEATURE_COLUMNS)
+        return np.empty((0, n), dtype=np.float32), np.empty(0, dtype=np.float32)
+    _, X_list, y_list = zip(*samples)
+    return np.array(X_list, dtype=np.float32), np.array(y_list, dtype=np.float32)

@@ -13,6 +13,8 @@ build/
 .vscode/
 .idea/
 
-# Cached data & trained models
+# Cached data (regenerated from NSE APIs)
 cache/
-models/*.joblib
+
+# Checkpoint files (temporary, deleted after training completes)
+models/checkpoint_*.joblib
