@@ -5,7 +5,6 @@ on:
     # 5:30 PM UTC = 11:00 PM IST, Monday–Friday
     - cron: "30 17 * * 1-5"
 
-  # Run manually from the GitHub Actions tab
   workflow_dispatch:
     inputs:
       full_retrain:
@@ -24,7 +23,7 @@ jobs:
     timeout-minutes: 90
 
     permissions:
-      contents: write   # needed to commit model back to repo
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -44,6 +43,14 @@ jobs:
       - name: Create cache and models directories
         run: mkdir -p cache models
 
+      # Restore checkpoint from previous run (if any) so we skip re-fetching
+      - name: Restore checkpoint artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: training-checkpoint
+          path: models/
+        continue-on-error: true   # no artifact on first run — that's fine
+
       - name: Run retraining
         env:
           FULL_RETRAIN: ${{ github.event.inputs.full_retrain }}
@@ -54,6 +61,16 @@ jobs:
           else
             python scripts/retrain.py
           fi
+
+      # If training failed mid-way, save checkpoint so the next run resumes
+      - name: Upload checkpoint on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-checkpoint
+          path: models/checkpoint_*.joblib
+          retention-days: 3
+          if-no-files-found: ignore
 
       - name: Check model was saved
         run: |
@@ -69,7 +86,6 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force-add model files even if listed in .gitignore
           git add -f models/*.joblib
 
           if git diff --cached --quiet; then
@@ -79,3 +95,11 @@ jobs:
             git push
             echo "Model pushed to repo."
           fi
+
+      # Clean up checkpoint artifact after successful training
+      - name: Delete checkpoint artifact on success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh artifact delete training-checkpoint --repo "$GITHUB_REPOSITORY" || true
