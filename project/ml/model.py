@@ -64,17 +64,23 @@ class BreakoutRanker:
 
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # Shift labels to non-negative (XGBRanker requires relevance >= 0)
-        # Original range [-2, 6] → shift by 2 → [0, 8]
-        y_shifted = y + 2.0
+        # XGBRanker requires non-negative integer relevance labels.
+        # Quantize float move labels [-2, 6] → integer grades [0, 8]:
+        #   grade 0 = strong reversal, grade 4 = no move, grade 8 = 6× gap move
+        y_int = np.clip(np.round(y + 2.0).astype(np.int32), 0, 8)
 
-        # Up-weight strong breakouts (+2/+3 after shift = +4/+5)
-        # This trains the model to identify top-tier setups, not average ones
-        weights = np.where(y >= 2.0, 4.0,
-                  np.where(y >= 1.0, 2.0,
-                  np.where(y >= 0.0, 1.0, 0.5)))
+        # XGBRanker sample_weight must be one value PER GROUP (not per sample).
+        # Weight each day by the best trade quality in that group.
+        group_weights = []
+        idx = 0
+        for g in groups:
+            best_grade = int(y_int[idx:idx + g].max())
+            w = 4.0 if best_grade >= 6 else (2.0 if best_grade >= 5 else 1.0)
+            group_weights.append(w)
+            idx += g
+        group_weights = np.array(group_weights, dtype=np.float32)
 
-        self.model.fit(X, y_shifted, group=groups, sample_weight=weights)
+        self.model.fit(X, y_int, group=groups, sample_weight=group_weights)
 
         self.is_trained = True
         self.trained_until = date.today()
