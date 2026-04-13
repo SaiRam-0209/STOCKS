@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+from datetime import date as _date
 
 from project.data.fetcher import fetch_all_stocks, fetch_daily
 from project.data.symbols import UNIVERSES
@@ -83,7 +84,6 @@ if mode == "🤖 AI Boom Predictor":
     """)
 
     # --- Check if model is stale ---
-    from datetime import date as _date
     _check_model = _BoomPredictor()
     _model_loaded = _check_model.load(universe=universe_name)
     if _model_loaded and _check_model.trained_until:
@@ -378,6 +378,37 @@ elif mode == "📊 Live Scan":
 elif mode == "⏮️ Backtest":
     st.info(f"Backtests the ORB strategy on ~60 days of 15-min data for **{len(symbols)} {universe_name}** stocks.")
 
+    # ── Improvement toggles ───────────────────────────────────────────────
+    st.subheader("⚙️ Strategy Improvements")
+    st.caption("Toggle each improvement to see its impact on Profit Factor")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        use_tight_sl = st.checkbox(
+            "Tighter Stop Loss (50% of candle)",
+            value=False,
+            help="Use half the opening candle as SL instead of full candle. Reduces avg loss."
+        )
+        use_trailing = st.checkbox(
+            "Trailing Stop",
+            value=False,
+            help="Move SL to breakeven at 1R profit. Trail by 0.5R after 2R. Lets winners run."
+        )
+    with col_b:
+        use_candle_filter = st.checkbox(
+            "Skip Wide Candles (>1.5× ATR)",
+            value=False,
+            help="Skip trades where the opening candle is unusually large — too chaotic."
+        )
+        use_nifty_filter = st.checkbox(
+            "Nifty Direction Filter",
+            value=False,
+            help="Skip LONG signals when Nifty gaps down, skip SHORT when Nifty gaps up."
+        )
+
+    sl_fraction = 0.5 if use_tight_sl else 1.0
+    max_atr = 1.5 if use_candle_filter else None
+
     if st.button(f"⏮️ Run Backtest — {universe_name}", type="primary", use_container_width=True):
         with st.spinner("Fetching historical data..."):
             stock_intraday = fetch_all_stocks(symbols, interval="15m", period="60d")
@@ -390,14 +421,38 @@ elif mode == "⏮️ Backtest":
                 except Exception:
                     pass
 
+            # Fetch Nifty if needed
+            nifty_df = None
+            if use_nifty_filter:
+                try:
+                    nifty_df = fetch_daily("^NSEI", days=90)
+                except Exception:
+                    pass
+
         with st.spinner("Simulating trades..."):
-            report = run_backtest(symbols, stock_intraday, stock_daily)
+            report = run_backtest(
+                symbols, stock_intraday, stock_daily,
+                nifty_daily=nifty_df,
+                sl_fraction=sl_fraction,
+                trailing_stop=use_trailing,
+                max_candle_atr_ratio=max_atr,
+                nifty_filter=use_nifty_filter,
+            )
 
         triggered = report.wins + report.losses
 
         if triggered == 0:
             st.warning("No trades were triggered.")
         else:
+            # Active improvements summary
+            active = []
+            if use_tight_sl: active.append("Tight SL")
+            if use_trailing: active.append("Trailing Stop")
+            if use_candle_filter: active.append("Wide Candle Filter")
+            if use_nifty_filter: active.append("Nifty Filter")
+            if active:
+                st.success(f"✅ Active improvements: {' + '.join(active)}")
+
             st.subheader(f"📈 Backtest Results — {universe_name}")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Trades", triggered)
@@ -411,6 +466,14 @@ elif mode == "⏮️ Backtest":
             c6.metric("Losses", report.losses)
             c7.metric("Avg Gain", f"₹{report.avg_gain:.2f}")
             c8.metric("Avg Loss", f"₹{report.avg_loss:.2f}")
+
+            # Profit Factor — highlighted
+            pf = report.profit_factor
+            pf_color = "green" if pf >= 2.0 else ("orange" if pf >= 1.5 else "red")
+            st.markdown(
+                f"**Profit Factor:** :{pf_color}[{pf:.3f}]"
+                f"{'  ✅ Target reached!' if pf >= 2.0 else f'  (Target: 2.0 — need +{2.0 - pf:.2f} more)'}"
+            )
 
             if report.trades:
                 st.subheader("📉 Equity Curve")
