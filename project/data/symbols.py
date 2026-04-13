@@ -222,15 +222,23 @@ RANK_MAP.update(LARGECAP_RANK_MAP)
 # Dynamic: All NSE stocks (fetched from NSE, cached)
 # =====================================================
 def _load_all_nse():
-    """Load all NSE stocks dynamically. Falls back to index stocks."""
+    """Load all NSE stocks dynamically. Falls back to hardcoded full list."""
     try:
         from project.data.symbols_fetcher import get_all_nse_stocks
         stocks = get_all_nse_stocks()
-        if stocks:
+        if stocks and len(stocks) > 500:
             return stocks
     except Exception:
         pass
-    return ALL_STOCKS  # fallback to hardcoded index stocks
+    # Fallback: use the baked-in full NSE list (works on Streamlit Cloud
+    # where NSE API is blocked)
+    try:
+        from project.data.nse_stocks import NSE_ALL_SYMBOLS
+        if NSE_ALL_SYMBOLS:
+            return NSE_ALL_SYMBOLS
+    except Exception:
+        pass
+    return ALL_STOCKS  # last resort: index stocks only
 
 
 NSE_ALL_STOCKS = _load_all_nse()
