@@ -18,3 +18,10 @@ cache/
 
 # Checkpoint files (temporary, deleted after training completes)
 models/checkpoint_*.joblib
+
+# Credentials — NEVER commit these
+.env
+.env.local
+
+# Paper trade logs
+logs/

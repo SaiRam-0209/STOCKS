@@ -38,6 +38,7 @@ mode = st.sidebar.radio("Select mode", [
     "📊 Live Scan",
     "⏮️ Backtest",
     "🧠 Train Model",
+    "⚡ Live Trading",
 ])
 
 # --- Sidebar: Filters ---
@@ -638,3 +639,219 @@ elif mode == "🧠 Train Model":
                     "Importance": metrics["feature_importances"],
                 }).sort_values("Importance", ascending=False)
                 st.bar_chart(imp_df.set_index("Feature"))
+
+# =====================================================
+# LIVE TRADING
+# =====================================================
+elif mode == "⚡ Live Trading":
+    import os as _os
+
+    st.markdown("""
+    **Automated ORB Trading Engine** — Scans, ranks, and trades automatically.
+    - 📋 **Paper Mode**: Simulates trades with real prices, no real money
+    - 🟢 **Live Mode**: Places real orders via Angel One SmartAPI
+    - 📱 **Telegram Alerts**: Get notified on every trade entry/exit
+    """)
+
+    # --- Trading Configuration ---
+    st.subheader("⚙️ Trading Configuration")
+
+    tcol1, tcol2, tcol3 = st.columns(3)
+    with tcol1:
+        trading_mode = st.radio("Trading Mode", ["📋 Paper", "🟢 Live"],
+                                help="Start with Paper mode to validate before going live")
+    with tcol2:
+        trading_capital = st.number_input("Capital (₹)", min_value=1000, max_value=10_00_000,
+                                          value=20_000, step=5000)
+    with tcol3:
+        max_trades = st.slider("Max Simultaneous Trades", 1, 8, 4)
+
+    tcol4, tcol5, tcol6 = st.columns(3)
+    with tcol4:
+        lt_gap_threshold = st.slider("Min Gap %", 1.0, 8.0, 4.0, 0.5, key="lt_gap")
+    with tcol5:
+        lt_vol_threshold = st.slider("Min Rel Volume", 1.0, 8.0, 2.5, 0.5, key="lt_vol")
+    with tcol6:
+        daily_loss_pct = st.slider("Daily Loss Limit %", 1.0, 10.0, 3.0, 0.5)
+
+    st.divider()
+
+    # --- Risk Summary ---
+    st.subheader("🛡️ Risk Parameters")
+    rcol1, rcol2, rcol3, rcol4 = st.columns(4)
+    max_per_trade = trading_capital * 0.25
+    daily_loss_limit = trading_capital * (daily_loss_pct / 100)
+    rcol1.metric("Capital", f"₹{trading_capital:,}")
+    rcol2.metric("Max Per Trade", f"₹{max_per_trade:,.0f}")
+    rcol3.metric("Daily Loss Limit", f"₹{daily_loss_limit:,.0f}")
+    rcol4.metric("Max Trades", max_trades)
+
+    st.divider()
+
+    # --- Broker Connection Status ---
+    is_live = "Live" in trading_mode
+    if is_live:
+        st.subheader("🔌 Broker Connection")
+        has_creds = all([
+            _os.getenv("ANGEL_API_KEY"),
+            _os.getenv("ANGEL_CLIENT_ID"),
+            _os.getenv("ANGEL_PASSWORD"),
+            _os.getenv("ANGEL_TOTP_SECRET"),
+        ])
+        if has_creds:
+            st.success("✅ Angel One credentials found")
+        else:
+            st.error(
+                "❌ Angel One credentials not configured. Set these environment variables:\n"
+                "- `ANGEL_API_KEY`\n"
+                "- `ANGEL_CLIENT_ID`\n"
+                "- `ANGEL_PASSWORD`\n"
+                "- `ANGEL_TOTP_SECRET`"
+            )
+            st.stop()
+
+    # --- Telegram Setup ---
+    st.subheader("📱 Telegram Alerts")
+    has_telegram = bool(_os.getenv("TELEGRAM_BOT_TOKEN") and _os.getenv("TELEGRAM_CHAT_ID"))
+    if has_telegram:
+        st.success("✅ Telegram alerts enabled")
+    else:
+        st.info(
+            "📱 Telegram alerts not configured (optional). To enable:\n"
+            "1. Message **@BotFather** on Telegram → `/newbot` → get your bot token\n"
+            "2. Message your bot, then find your chat ID\n"
+            "3. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars"
+        )
+
+    st.divider()
+
+    # --- Scan Now (doesn't wait for market hours) ---
+    st.subheader("🔍 Scan Now")
+    st.caption("Run the scanner immediately to see which stocks qualify right now")
+
+    if st.button("🔍 Run ORB Scan", type="primary", use_container_width=True):
+        with st.spinner("Scanning stocks for ORB setups..."):
+            from project.trading.paper import run_paper_scan_only
+            scan_results = run_paper_scan_only(
+                capital=trading_capital,
+                gap_threshold=lt_gap_threshold,
+                vol_threshold=lt_vol_threshold,
+                symbols=[s for s in symbols],
+            )
+
+        if not scan_results:
+            st.warning("No qualifying stocks found right now. This is normal outside market hours or when no stocks meet the gap/volume thresholds.")
+        else:
+            st.success(f"Found {len(scan_results)} qualifying stocks!")
+
+            scan_df = pd.DataFrame(scan_results)
+            scan_df = scan_df.rename(columns={
+                "ticker": "Stock", "direction": "Direction",
+                "gap_pct": "Gap %", "rel_vol": "Rel Vol",
+                "entry": "Entry ₹", "stoploss": "SL ₹",
+                "target": "Target ₹", "quantity": "Qty",
+                "risk_amount": "Risk ₹", "reward_amount": "Reward ₹",
+                "score": "Score",
+            })
+            st.dataframe(scan_df, use_container_width=True, hide_index=True)
+
+            # Per-trade breakdown
+            for r in scan_results:
+                with st.expander(f"{r['ticker']} — {r['direction']} | Gap {r['gap_pct']:+.1f}%"):
+                    ec1, ec2, ec3, ec4 = st.columns(4)
+                    ec1.metric("Entry", f"₹{r['entry']:.2f}")
+                    ec2.metric("Stoploss", f"₹{r['stoploss']:.2f}")
+                    ec3.metric("Target", f"₹{r['target']:.2f}")
+                    ec4.metric("Quantity", r["quantity"])
+
+                    ec5, ec6, ec7 = st.columns(3)
+                    ec5.metric("Risk", f"₹{r['risk_amount']:.2f}")
+                    ec6.metric("Potential Reward", f"₹{r['reward_amount']:.2f}")
+                    ec7.metric("Risk:Reward", "1:2")
+
+    st.divider()
+
+    # --- Start Automated Trading ---
+    st.subheader("🤖 Automated Trading")
+
+    mode_label = "PAPER" if "Paper" in trading_mode else "LIVE"
+    mode_color = "blue" if "Paper" in trading_mode else "red"
+
+    if is_live:
+        st.warning(
+            "⚠️ **LIVE MODE** — Real money will be used! "
+            "Make sure you've tested thoroughly in Paper mode first."
+        )
+
+    if st.button(
+        f"▶️ Start {mode_label} Trading Session",
+        type="primary" if not is_live else "secondary",
+        use_container_width=True,
+    ):
+        st.info(
+            f"🕘 The trading engine will:\n"
+            f"1. Wait for market open (9:15 AM)\n"
+            f"2. Scan after first 15-min candle (9:30 AM)\n"
+            f"3. Place top {max_trades} trades automatically\n"
+            f"4. Monitor until 3:15 PM\n"
+            f"5. Exit remaining positions\n"
+            f"6. Send daily report"
+        )
+
+        log_container = st.empty()
+        status_container = st.empty()
+
+        from project.trading.executor import TradingExecutor
+        from project.trading.risk import RiskConfig
+
+        alert_fn = None
+        if has_telegram:
+            from project.alerts.telegram import TelegramAlert
+            _tg = TelegramAlert()
+            alert_fn = _tg.send
+
+        executor = TradingExecutor(
+            mode="paper" if "Paper" in trading_mode else "live",
+            capital=trading_capital,
+            gap_threshold=lt_gap_threshold,
+            vol_threshold=lt_vol_threshold,
+            top_n=max_trades,
+            symbols=[s for s in symbols],
+            alert_callback=alert_fn,
+        )
+        executor.risk.config.daily_loss_limit_pct = daily_loss_pct / 100
+
+        daily_log = executor.run()
+
+        # Show results
+        st.subheader("📊 Session Results")
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        rc1.metric("Trades", daily_log.trades_placed)
+        rc2.metric("Wins", daily_log.wins)
+        rc3.metric("Losses", daily_log.losses)
+        rc4.metric("P&L", f"₹{daily_log.total_pnl:+.2f}",
+                    delta_color="normal" if daily_log.total_pnl >= 0 else "inverse")
+
+        if daily_log.events:
+            st.subheader("📋 Event Log")
+            for event in daily_log.events:
+                st.text(event)
+
+    st.divider()
+
+    # --- Paper Trade History ---
+    st.subheader("📜 Paper Trade History")
+    from project.trading.paper import get_paper_trade_history
+    history = get_paper_trade_history()
+    if history:
+        for day_log in reversed(history[-10:]):
+            with st.expander(
+                f"{day_log['date']} — "
+                f"P&L: ₹{day_log['total_pnl']:+.2f} | "
+                f"W:{day_log['wins']} L:{day_log['losses']}"
+            ):
+                if day_log.get("trades"):
+                    trades_df = pd.DataFrame(day_log["trades"])
+                    st.dataframe(trades_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No paper trades yet. Run a paper trading session to see results here.")
