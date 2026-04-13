@@ -1,9 +1,12 @@
 """Streamlit web UI — AI Stock Scanner for All / Largecap / Midcap / Smallcap."""
 
+import sys, os
+# Ensure repo root is on sys.path (needed for Streamlit Cloud)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import streamlit as st
 import pandas as pd
 import hmac
-import os
 from datetime import date as _date
 
 from project.data.fetcher import fetch_all_stocks, fetch_daily
