@@ -231,6 +231,9 @@ def backtest_symbol(
     intraday_df: pd.DataFrame,
     daily_df: pd.DataFrame,
     nifty_daily: pd.DataFrame | None = None,
+    # ── entry thresholds ─────────────────────────────────
+    gap_threshold: float = 2.0,
+    vol_threshold: float = 1.5,
     # ── improvement knobs ────────────────────────────────
     sl_fraction: float = 1.0,
     trailing_stop: bool = False,
@@ -260,7 +263,7 @@ def backtest_symbol(
         avg_vol = float(prior_vols.mean())
         rel_vol = relative_volume(today_vol, avg_vol)
 
-        if abs(gap_pct) < 2.0 or rel_vol < 1.5:
+        if abs(gap_pct) < gap_threshold or rel_vol < vol_threshold:
             continue
 
         direction = "LONG" if gap_pct > 0 else "SHORT"
@@ -303,7 +306,8 @@ def run_backtest(
     stock_intraday: dict[str, pd.DataFrame],
     stock_daily: dict[str, pd.DataFrame],
     nifty_daily: pd.DataFrame | None = None,
-    # ── improvement knobs ────────────────────────────────
+    gap_threshold: float = 2.0,
+    vol_threshold: float = 1.5,
     sl_fraction: float = 1.0,
     trailing_stop: bool = False,
     max_candle_atr_ratio: float | None = None,
@@ -321,6 +325,8 @@ def run_backtest(
             stock_intraday[symbol],
             stock_daily[symbol],
             nifty_daily=nifty_daily,
+            gap_threshold=gap_threshold,
+            vol_threshold=vol_threshold,
             sl_fraction=sl_fraction,
             trailing_stop=trailing_stop,
             max_candle_atr_ratio=max_candle_atr_ratio,

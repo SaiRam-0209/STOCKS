@@ -378,6 +378,22 @@ elif mode == "📊 Live Scan":
 elif mode == "⏮️ Backtest":
     st.info(f"Backtests the ORB strategy on ~60 days of 15-min data for **{len(symbols)} {universe_name}** stocks.")
 
+    # ── Entry thresholds ─────────────────────────────────────────────────
+    st.subheader("🎯 Entry Thresholds")
+    st.caption("Higher gap% and volume filters = fewer but stronger trades")
+
+    th_col1, th_col2 = st.columns(2)
+    with th_col1:
+        bt_gap_thresh = st.slider(
+            "Min Gap %", min_value=1.0, max_value=6.0, value=2.0, step=0.5,
+            help="Only trade stocks that gap by at least this % from previous close"
+        )
+    with th_col2:
+        bt_vol_thresh = st.slider(
+            "Min Relative Volume", min_value=1.0, max_value=5.0, value=1.5, step=0.5,
+            help="Only trade when volume is at least this multiple of 10-day average"
+        )
+
     # ── Improvement toggles ───────────────────────────────────────────────
     st.subheader("⚙️ Strategy Improvements")
     st.caption("Toggle each improvement to see its impact on Profit Factor")
@@ -433,6 +449,8 @@ elif mode == "⏮️ Backtest":
             report = run_backtest(
                 symbols, stock_intraday, stock_daily,
                 nifty_daily=nifty_df,
+                gap_threshold=bt_gap_thresh,
+                vol_threshold=bt_vol_thresh,
                 sl_fraction=sl_fraction,
                 trailing_stop=use_trailing,
                 max_candle_atr_ratio=max_atr,
@@ -445,13 +463,12 @@ elif mode == "⏮️ Backtest":
             st.warning("No trades were triggered.")
         else:
             # Active improvements summary
-            active = []
+            active = [f"Gap≥{bt_gap_thresh}%", f"Vol≥{bt_vol_thresh}x"]
             if use_tight_sl: active.append("Tight SL")
             if use_trailing: active.append("Trailing Stop")
             if use_candle_filter: active.append("Wide Candle Filter")
             if use_nifty_filter: active.append("Nifty Filter")
-            if active:
-                st.success(f"✅ Active improvements: {' + '.join(active)}")
+            st.success(f"✅ Active: {' + '.join(active)}")
 
             st.subheader(f"📈 Backtest Results — {universe_name}")
             c1, c2, c3, c4 = st.columns(4)
