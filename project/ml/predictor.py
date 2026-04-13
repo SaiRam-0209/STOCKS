@@ -26,6 +26,7 @@ from project.ml.features import (
     REL_VOL_THRESHOLD,
 )
 from project.features.indicators import gap_percentage, relative_volume, rsi, ema
+from project.data.sectors import get_sector
 
 
 SYMBOL_SECTOR_MAP = {
@@ -338,13 +339,19 @@ def predict_boom_stocks(
     if symbols is None:
         symbols = ALL_STOCKS
 
-    # ── 1. Macro ─────────────────────────────────────────
-    print("  [1/5] Fetching global macro data...")
+    # ── 1. Macro + Institutional Flow ─────────────────────
+    print("  [1/5] Fetching global macro + institutional flow data...")
     global_snapshot = fetch_global_snapshot()
     macro_result = compute_macro_score(global_snapshot)
     sector_signals = get_sector_rotation_signals(global_snapshot)
     macro_score = macro_result["macro_score"]
+
+    # FII/DII flow
+    from project.data.fii_dii import fetch_institutional_flow
+    _fii_data = fetch_institutional_flow()
+    _fii_flow_score = _fii_data["flow_score"]
     print(f"         Macro score: {macro_score} ({macro_result['market_mood']})")
+    print(f"         FII flow: {_fii_data['fii_sentiment']} (score: {_fii_flow_score})")
 
     # ── 2. News ──────────────────────────────────────────
     print("  [2/5] Fetching news & analyzing sentiment...")
@@ -397,12 +404,29 @@ def predict_boom_stocks(
                 continue
 
             # Build features at breakout moment
-            sector = SYMBOL_SECTOR_MAP.get(symbol, "")
+            from project.data.sectors import get_sector as _get_sector
+            sector = _get_sector(symbol) or SYMBOL_SECTOR_MAP.get(symbol, "")
             sec_score = sector_signals.get(sector, 0.0)
+
+            # Earnings likelihood
+            from project.data.earnings import earnings_likelihood as _earn_like
+            _stock_headlines = [
+                a["title"] for a in all_news
+                if symbol.replace(".NS", "").lower() in a.get("title", "").lower()
+            ]
+            _earn_flag = _earn_like(gap_pct, rel_vol, news_headlines=_stock_headlines)
+
+            # News sentiment for this stock
+            _sent_data = aggregate_sentiment_for_stock(all_news, symbol)
+            _news_sent = _sent_data["avg_sentiment"]
+
             feat = build_breakout_features_for_day(
                 daily_df, last_idx,
                 macro_score=macro_score / 10,
                 sector_score=sec_score,
+                earnings_flag=_earn_flag,
+                news_sentiment=_news_sent,
+                fii_flow_score=_fii_flow_score,
             )
             if feat is None:
                 continue

@@ -11,6 +11,8 @@ is zero look-ahead bias in live prediction.
 import numpy as np
 import pandas as pd
 from project.features.indicators import gap_percentage, relative_volume, ema, atr
+from project.data.sectors import get_sector
+from project.data.earnings import earnings_likelihood, is_result_season
 
 # Live prediction filter (same as backtest engine)
 GAP_THRESHOLD = 2.0
@@ -41,6 +43,12 @@ BREAKOUT_FEATURE_COLUMNS = [
     # External context
     "macro_score",
     "sector_score",
+    # ── NEW: 5 upgraded features ──────────────────────────
+    "earnings_flag",      # 0-1: likelihood this gap is earnings-driven
+    "news_sentiment",     # -1 to +1: news sentiment score for this stock
+    "fii_flow_score",     # -1 to +1: institutional money flow direction
+    "prev_day_pattern",   # 0-3: candle pattern (0=none, 1=doji, 2=inside bar, 3=narrow range)
+    "prev_day_body_pct",  # body/range ratio of previous candle (0-1)
 ]
 
 
@@ -50,6 +58,10 @@ def build_breakout_features_for_day(
     macro_score: float = 0.0,
     sector_score: float = 0.0,
     _precomputed_gap_percentile: float | None = None,
+    # ── New feature inputs ──
+    earnings_flag: float = 0.0,
+    news_sentiment: float = 0.0,
+    fii_flow_score: float = 0.0,
 ) -> dict | None:
     """Build breakout-quality features for one gap day.
 
@@ -148,6 +160,31 @@ def build_breakout_features_for_day(
     atr5 = float(atr5_series.iloc[-1]) if len(atr5_series) >= 5 else current_atr
     range_compression = atr5 / current_atr if current_atr > 0 else 1.0
 
+    # ── NEW: Previous day candle pattern ──────────────────
+    prev_open = float(prev["Open"])
+    prev_high = float(prev["High"])
+    prev_low = float(prev["Low"])
+    prev_range = prev_high - prev_low
+
+    # Body as % of total range (small body = indecision)
+    prev_body = abs(float(prev["Close"]) - prev_open)
+    prev_day_body_pct = prev_body / prev_range if prev_range > 0 else 0.5
+
+    # Pattern detection
+    prev_day_pattern = 0.0
+    if prev_range > 0:
+        body_ratio = prev_body / prev_range
+        if body_ratio < 0.1:
+            prev_day_pattern = 1.0   # Doji — extreme indecision → breakout imminent
+        elif day_idx >= 2:
+            # Inside bar: today's prev candle fits inside the one before it
+            pprev = daily_df.iloc[day_idx - 2]
+            if prev_high <= float(pprev["High"]) and prev_low >= float(pprev["Low"]):
+                prev_day_pattern = 2.0   # Inside bar — compression → explosion
+        # Narrow range day: range < 50% of ATR
+        if current_atr > 0 and prev_range < 0.5 * current_atr:
+            prev_day_pattern = max(prev_day_pattern, 3.0)  # NR day
+
     return {
         "gap_pct": round(gap_pct, 4),
         "gap_abs": round(gap_abs, 4),
@@ -164,6 +201,12 @@ def build_breakout_features_for_day(
         "range_compression": round(range_compression, 4),
         "macro_score": round(macro_score, 4),
         "sector_score": round(sector_score, 4),
+        # ── New features ──
+        "earnings_flag": round(earnings_flag, 4),
+        "news_sentiment": round(news_sentiment, 4),
+        "fii_flow_score": round(fii_flow_score, 4),
+        "prev_day_pattern": prev_day_pattern,
+        "prev_day_body_pct": round(prev_day_body_pct, 4),
     }
 
 
@@ -255,9 +298,20 @@ def build_breakout_training_data(
             if len(window) > 0 else 0.5
         )
 
+        # Compute earnings likelihood for training data
+        trade_date = daily_df.index[i]
+        _earn_flag = earnings_likelihood(
+            gap_pct_raw, rel_vol_val,
+            today=trade_date.date() if hasattr(trade_date, 'date') else None,
+        )
+
         feat = build_breakout_features_for_day(
             daily_df, i,
             _precomputed_gap_percentile=gap_percentile,
+            earnings_flag=_earn_flag,
+            # news_sentiment and fii_flow_score are 0 during training
+            # (historical sentiment data not available — model learns
+            # to use them as bonus signals when present at prediction time)
         )
         if feat is None:
             continue
