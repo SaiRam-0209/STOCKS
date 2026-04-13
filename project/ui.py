@@ -160,11 +160,20 @@ if mode == "🤖 AI Boom Predictor":
         st.info("ℹ️ Model exists but has no training date. Retrain to enable auto-update tracking.")
 
     if st.button(f"🚀 Find Tomorrow's Boom Stocks — {universe_name}", type="primary", use_container_width=True):
-        with st.spinner(f"Running AI pipeline on {len(symbols)} {universe_name} stocks..."):
-            candidates, context = predict_boom_stocks(symbols, top_n=top_n, universe=universe_name)
+        try:
+            with st.spinner(f"Running AI pipeline on {len(symbols)} {universe_name} stocks..."):
+                candidates, context = predict_boom_stocks(symbols, top_n=top_n, universe=universe_name)
+        except Exception as _pred_exc:
+            st.error(f"Prediction pipeline error: {_pred_exc}")
+            candidates, context = [], {}
 
         if not candidates:
-            st.error("Failed to generate predictions. Check logs for errors.")
+            if context.get("warning"):
+                st.warning(f"No predictions: {context['warning']}")
+            elif context.get("error"):
+                st.error(f"Pipeline error: {context['error']}")
+            else:
+                st.error("Failed to generate predictions. No stocks passed gap + volume filter today.")
         else:
             # --- Universe badge ---
             st.info(f"🏷️ Universe: **{universe_name}** | Stocks scored: **{context['stocks_scored']}** | News analyzed: **{context['total_news']}**")
