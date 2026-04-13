@@ -2,6 +2,8 @@
 
 import streamlit as st
 import pandas as pd
+import hmac
+import os
 from datetime import date as _date
 
 from project.data.fetcher import fetch_all_stocks, fetch_daily
@@ -15,6 +17,44 @@ from project.ml.model import BreakoutRanker as _BoomPredictor
 
 # --- Page config ---
 st.set_page_config(page_title="AI Stock Scanner", page_icon="🚀", layout="wide")
+
+# --- Authentication Gate ---
+def _check_password() -> bool:
+    """Block access unless the user enters the correct password.
+
+    Password is read from:
+        1. Streamlit secrets: st.secrets["APP_PASSWORD"]
+        2. Environment variable: APP_PASSWORD
+        3. Fallback default for local dev (change before deploying!)
+    """
+    try:
+        correct_pw = st.secrets["APP_PASSWORD"]
+    except (FileNotFoundError, KeyError):
+        correct_pw = os.getenv("APP_PASSWORD", "")
+
+    if not correct_pw:
+        # No password configured — allow access (local dev)
+        return True
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.title("🔒 AI Stock Scanner")
+    st.markdown("Enter your password to access the trading dashboard.")
+
+    password = st.text_input("Password", type="password", key="login_pw")
+    if st.button("Login", type="primary", use_container_width=True):
+        if hmac.compare_digest(password, correct_pw):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password")
+    return False
+
+
+if not _check_password():
+    st.stop()
+
 st.title("🚀 AI-Powered Stock Scanner")
 
 # --- Sidebar: Universe selector ---
