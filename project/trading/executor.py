@@ -43,6 +43,10 @@ DEFAULT_VOL_THRESHOLD = 2.5      # Proven PF 2.055
 DEFAULT_TOP_N = 4                # Max simultaneous trades
 SLIPPAGE_PCT = 0.001             # 0.1% slippage buffer on entry orders
 TRAILING_SL_ENABLED = True       # Move SL to breakeven at 1R profit
+MIN_STOCK_PRICE = 50.0           # Avoid penny stocks (noisy, wide spreads)
+MAX_STOCK_PRICE = 5000.0         # Avoid stocks where 1 share > 25% capital
+SHORT_FILTER_ENABLED = True      # Only allow shorts in bearish markets
+MIN_AI_CONFIDENCE = 0.3          # Minimum AI model score to take a trade
 
 
 @dataclass
@@ -125,6 +129,22 @@ class TradingExecutor:
             self.daily_log.log_event(f"Not a trading day: {reason}")
             self._alert(f"Skipping today: {reason}")
             return self.daily_log
+
+        # Market regime check: skip ORB in extreme bear markets
+        try:
+            from project.macro.global_data import fetch_global_snapshot, compute_macro_score
+            snapshot = fetch_global_snapshot()
+            macro = compute_macro_score(snapshot)
+            mood = macro.get("market_mood", "NEUTRAL")
+            self._market_mood = mood
+            self.daily_log.log_event(f"Market mood: {mood} (score: {macro.get('macro_score', 0)})")
+            if mood == "VERY_BEARISH":
+                self.daily_log.log_event("VERY BEARISH market — reducing position sizes by 50%")
+                self.risk.config.max_capital_per_trade *= 0.5
+                self._alert("⚠️ Very bearish market — trading with reduced size")
+        except Exception as exc:
+            self._market_mood = "NEUTRAL"
+            self.daily_log.log_event(f"Macro check skipped: {exc}")
 
         # Connect broker (live mode only)
         if self.mode == "live":
@@ -229,8 +249,24 @@ class TradingExecutor:
         if abs(gap_pct) < self.gap_threshold or rel_vol < self.vol_threshold:
             return None
 
+        # Price filter: avoid penny stocks and ultra-expensive stocks
+        if today_open < MIN_STOCK_PRICE or today_open > MAX_STOCK_PRICE:
+            return None
+
         # Direction
         direction = "LONG" if gap_pct > 0 else "SHORT"
+
+        # Short filter: only allow shorts in bearish markets (backtest shows 38% WR for shorts)
+        if SHORT_FILTER_ENABLED and direction == "SHORT":
+            try:
+                from project.macro.global_data import fetch_global_snapshot, compute_macro_score
+                snapshot = fetch_global_snapshot()
+                macro = compute_macro_score(snapshot)
+                mood = macro.get("market_mood", "NEUTRAL")
+                if mood not in ("BEARISH", "VERY_BEARISH"):
+                    return None  # Skip shorts in neutral/bullish markets
+            except Exception:
+                return None  # If can't determine mood, skip shorts to be safe
 
         # Entry, SL, Target
         if direction == "LONG":
@@ -304,29 +340,57 @@ class TradingExecutor:
     # ── Ranking ───────────────────────────────────────────────────────────
 
     def _rank_and_select(self, candidates: list[ScanResult]) -> list[ScanResult]:
-        """Rank candidates by gap strength and select top N."""
-        # Try to use the ML ranker if available
+        """Rank candidates using AI model + conviction score, filter by confidence."""
+        # Try AI scoring first
+        ai_scored = False
         try:
             from project.ml.model import BreakoutRanker, MODEL_DIR
+            from project.ml.features import build_breakout_features_for_day
             import os
+            import yfinance as yf
+
             model_path = os.path.join(MODEL_DIR, "breakout_ranker_all_nse.joblib")
             if os.path.exists(model_path):
                 ranker = BreakoutRanker.load("All NSE")
                 self.daily_log.log_event("Using AI BreakoutRanker for scoring")
-                # Score would require building features — fall back to simple ranking for now
-        except Exception:
-            pass
 
-        # Simple ranking: sort by |gap_pct| × rel_vol (conviction score)
-        for c in candidates:
-            c.model_score = abs(c.gap_pct) * c.rel_vol
+                for c in candidates:
+                    try:
+                        yf_ticker = c.ticker if c.ticker.endswith(".NS") else f"{c.ticker}.NS"
+                        daily = yf.Ticker(yf_ticker).history(period="30d", interval="1d")
+                        if len(daily) >= 5:
+                            features = build_breakout_features_for_day(daily, daily.iloc[-1])
+                            if features is not None:
+                                score = ranker.predict_proba(features)
+                                c.model_score = float(score)
+                                continue
+                    except Exception:
+                        pass
+                    # Fallback: simple conviction score normalized to 0-1
+                    c.model_score = min(abs(c.gap_pct) * c.rel_vol / 100, 1.0)
 
+                ai_scored = True
+        except Exception as exc:
+            self.daily_log.log_event(f"AI scoring unavailable: {exc}")
+
+        if not ai_scored:
+            # Simple ranking: |gap| × rel_vol as conviction score
+            for c in candidates:
+                c.model_score = min(abs(c.gap_pct) * c.rel_vol / 100, 1.0)
+
+        # Filter by minimum confidence
+        candidates = [c for c in candidates if c.model_score >= MIN_AI_CONFIDENCE]
+
+        # Sort by AI score (highest first)
         candidates.sort(key=lambda x: x.model_score, reverse=True)
         top = candidates[:self.top_n]
 
         self.daily_log.log_event(
-            f"Top {len(top)} picks: "
-            + ", ".join(f"{c.ticker} ({c.direction} gap={c.gap_pct:+.1f}%)" for c in top)
+            f"Top {len(top)} picks (AI={'YES' if ai_scored else 'NO'}): "
+            + ", ".join(
+                f"{c.ticker} ({c.direction} gap={c.gap_pct:+.1f}% score={c.model_score:.2f})"
+                for c in top
+            )
         )
         return top
 
