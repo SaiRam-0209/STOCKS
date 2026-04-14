@@ -891,10 +891,169 @@ elif mode == "⚡ Live Trading":
 
     st.divider()
 
-    # --- Paper Trade History ---
-    st.subheader("📜 Paper Trade History")
+    # --- Risk/Reward Calculator ---
+    st.subheader("🧮 Risk/Reward Calculator")
+    st.caption("Enter trade details to see position sizing instantly")
+
+    calc1, calc2, calc3 = st.columns(3)
+    with calc1:
+        calc_capital = st.number_input("Your Capital ₹", value=trading_capital, step=1000, key="calc_cap")
+    with calc2:
+        calc_entry = st.number_input("Entry Price ₹", value=100.0, step=1.0, key="calc_entry")
+    with calc3:
+        calc_sl = st.number_input("Stoploss ₹", value=96.0, step=1.0, key="calc_sl")
+
+    if calc_entry > 0 and calc_sl > 0 and calc_entry != calc_sl:
+        risk_per_share = abs(calc_entry - calc_sl)
+        max_risk = calc_capital * 0.02  # 2% risk
+        max_alloc = calc_capital * 0.25  # 25% allocation
+        qty_risk = int(max_risk / risk_per_share) if risk_per_share > 0 else 0
+        qty_alloc = int(max_alloc / calc_entry) if calc_entry > 0 else 0
+        qty = min(qty_risk, qty_alloc)
+        qty = max(qty, 1)
+        target_price = calc_entry + 2 * risk_per_share if calc_entry > calc_sl else calc_entry - 2 * risk_per_share
+        total_risk = risk_per_share * qty
+        total_reward = 2 * risk_per_share * qty
+
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        cc1.metric("Quantity", f"{qty} shares")
+        cc2.metric("Total Risk", f"₹{total_risk:.0f}", delta=f"-{total_risk/calc_capital*100:.1f}%", delta_color="inverse")
+        cc3.metric("Potential Reward", f"₹{total_reward:.0f}", delta=f"+{total_reward/calc_capital*100:.1f}%")
+        cc4.metric("Target Price", f"₹{target_price:.2f}")
+        st.caption(f"Risk:Reward = 1:2 | Investment: ₹{calc_entry * qty:,.0f} ({calc_entry * qty / calc_capital * 100:.0f}% of capital)")
+
+    st.divider()
+
+    # --- Performance Dashboard ---
+    st.subheader("📊 Performance Dashboard")
+    from project.trading.portfolio import load_portfolio_history, get_portfolio_summary
+
+    portfolio = get_portfolio_summary()
+    if portfolio["total_days"] > 0:
+        pc1, pc2, pc3, pc4 = st.columns(4)
+        pc1.metric("Total Days", portfolio["total_days"])
+        pc2.metric("Total P&L", f"₹{portfolio['total_pnl']:+.2f}")
+        pc3.metric("Win Rate", f"{portfolio['win_rate']:.1f}%")
+        pc4.metric("Current Capital", f"₹{portfolio['current_capital']:,.0f}")
+
+        pc5, pc6, pc7, pc8 = st.columns(4)
+        pc5.metric("Total Trades", portfolio["total_trades"])
+        pc6.metric("Best Day", f"₹{portfolio['best_day']:+.2f}")
+        pc7.metric("Worst Day", f"₹{portfolio['worst_day']:+.2f}")
+        pc8.metric("Avg Daily P&L", f"₹{portfolio['avg_daily_pnl']:+.2f}")
+
+        # Equity curve
+        if portfolio["equity_curve"]:
+            eq_df = pd.DataFrame(portfolio["equity_curve"])
+            st.line_chart(eq_df.set_index("date")["pnl"], use_container_width=True)
+    else:
+        st.info("No performance data yet. Start paper/live trading to see your equity curve here.")
+
+    st.divider()
+
+    # --- Stock News Panel ---
+    st.subheader("📰 Why Did It Gap?")
+    st.caption("Search for news about any stock to understand the gap reason")
+    news_ticker = st.text_input("Enter stock ticker (e.g., TATASTEEL)", key="news_search")
+    if news_ticker:
+        try:
+            from project.news.fetcher import fetch_news
+            from project.news.sentiment import aggregate_sentiment_for_stock
+            all_news = fetch_news(max_age_hours=72)
+            sent = aggregate_sentiment_for_stock(all_news, news_ticker.upper().strip())
+            if sent["headlines"]:
+                st.markdown(f"**Sentiment: {sent['sentiment_label']}** (score: {sent['avg_sentiment']:.3f})")
+                for h in sent["headlines"][:10]:
+                    emoji = "🟢" if h.get("sentiment", 0) > 0.05 else ("🔴" if h.get("sentiment", 0) < -0.05 else "⚪")
+                    st.markdown(f"{emoji} {h.get('title', 'No title')}")
+            else:
+                st.info(f"No recent news found for {news_ticker}. Try a different ticker.")
+        except Exception as _news_err:
+            st.error(f"News fetch error: {_news_err}")
+
+    st.divider()
+
+    # --- Options Strategy ---
+    st.subheader("📈 Options Strategy Calculator")
+    st.caption("Estimate options P&L for gap stocks (F&O stocks only)")
+
+    oc1, oc2, oc3 = st.columns(3)
+    with oc1:
+        opt_stock_price = st.number_input("Stock Price ₹", value=500.0, step=10.0, key="opt_px")
+    with oc2:
+        opt_gap_pct = st.number_input("Expected Gap %", value=4.0, step=0.5, key="opt_gap")
+    with oc3:
+        opt_premium = st.number_input("ATM Option Premium ₹", value=15.0, step=1.0, key="opt_prem")
+
+    if opt_stock_price > 0 and opt_premium > 0:
+        gap_move = opt_stock_price * (opt_gap_pct / 100)
+        # Rough ATM option delta ~0.5, so option moves ~50% of stock move
+        opt_move = gap_move * 0.5
+        opt_return_pct = (opt_move / opt_premium) * 100
+
+        lots_with_capital = int(trading_capital / (opt_premium * 25))  # 25 = approx lot size
+        opt_profit = lots_with_capital * 25 * opt_move
+        opt_max_loss = lots_with_capital * 25 * opt_premium
+
+        oo1, oo2, oo3, oo4 = st.columns(4)
+        oo1.metric("Expected Option Move", f"₹{opt_move:.1f}", delta=f"+{opt_return_pct:.0f}%")
+        oo2.metric("Lots Affordable", lots_with_capital)
+        oo3.metric("Potential Profit", f"₹{opt_profit:,.0f}")
+        oo4.metric("Max Loss (if wrong)", f"₹{opt_max_loss:,.0f}")
+        st.warning("⚠️ Options are high-risk. Only use with F&O stocks. Start with 1 lot.")
+
+    st.divider()
+
+    # --- Multi-Strategy Recommendation ---
+    st.subheader("🎯 Strategy Recommendation")
+    try:
+        from project.strategy.multi import recommend_strategy
+        from project.macro.global_data import fetch_global_snapshot, compute_macro_score
+        _snap = fetch_global_snapshot()
+        _macro = compute_macro_score(_snap)
+        _vix = _snap.get("india_vix", {}).get("price", 15.0)
+        recommended = recommend_strategy(_macro["market_mood"], _vix)
+
+        strategy_info = {
+            "ORB": ("🔥 Opening Range Breakout", "Best for trending days. Gap stocks with volume surge."),
+            "VWAP_BOUNCE": ("📊 VWAP Bounce", "Best for range-bound days. Buy at VWAP support, sell at resistance."),
+            "MEAN_REVERSION": ("🔄 Mean Reversion", "Best for high-VIX choppy days. Buy oversold RSI < 30."),
+        }
+        name, desc = strategy_info.get(recommended, ("Unknown", ""))
+        st.success(f"**Today's recommended strategy: {name}**\n\n{desc}\n\nMarket: {_macro['market_mood']} | VIX: {_vix}")
+    except Exception:
+        st.info("Strategy recommendation requires market data. Available during market hours.")
+
+    st.divider()
+
+    # --- Export Trades ---
+    st.subheader("📥 Export Trades")
     from project.trading.paper import get_paper_trade_history
     history = get_paper_trade_history()
+    if history:
+        all_trades = []
+        for day_log in history:
+            for t in day_log.get("trades", []):
+                t["date"] = day_log["date"]
+                all_trades.append(t)
+        if all_trades:
+            export_df = pd.DataFrame(all_trades)
+            csv_data = export_df.to_csv(index=False)
+            st.download_button(
+                "📥 Download Trade Log (CSV)",
+                csv_data,
+                file_name="trade_history.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+            st.dataframe(export_df.tail(20), use_container_width=True, hide_index=True)
+    else:
+        st.info("No trades to export yet.")
+
+    st.divider()
+
+    # --- Paper Trade History ---
+    st.subheader("📜 Paper Trade History")
     if history:
         for day_log in reversed(history[-10:]):
             with st.expander(

@@ -25,6 +25,10 @@ class RiskConfig:
     max_trades_per_day: int = 8               # Don't overtrade
     skip_expiry_days: bool = True             # Skip Thur (weekly expiry)
     skip_first_minute: bool = True            # Wait for 15m candle to form
+    # Drawdown recovery
+    drawdown_recovery: bool = True            # Auto-reduce size after losses
+    consecutive_loss_threshold: int = 3       # After N consecutive losses
+    recovery_size_pct: float = 0.5            # Reduce position to 50%
 
 
 @dataclass
@@ -95,8 +99,17 @@ class RiskManager:
         if entry_price <= 0:
             return 0
 
+        # Drawdown recovery: reduce size after consecutive losses
+        size_multiplier = 1.0
+        if self.config.drawdown_recovery:
+            consec = getattr(self.state, "consecutive_losses", 0)
+            if consec >= self.config.consecutive_loss_threshold:
+                size_multiplier = self.config.recovery_size_pct
+                log.warning("Drawdown recovery active: %d consecutive losses, size reduced to %.0f%%",
+                            consec, size_multiplier * 100)
+
         # Method 1: Max capital allocation
-        max_capital = self.config.total_capital * self.config.max_capital_per_trade
+        max_capital = self.config.total_capital * self.config.max_capital_per_trade * size_multiplier
         qty_by_capital = int(max_capital / entry_price)
 
         # Method 2: Risk-based sizing
@@ -121,10 +134,16 @@ class RiskManager:
         self.state.trades_taken += 1
         self.state.active_trades += 1
 
-    def record_trade_exit(self, pnl: float):
+    def record_trade_exit(self, pnl: float, result: str = ""):
         """Called when a trade exits (win or loss)."""
         self.state.active_trades = max(0, self.state.active_trades - 1)
         self.state.realized_pnl += pnl
+
+        # Track consecutive losses for drawdown recovery
+        if result == "LOSS" or pnl < 0:
+            self.state.consecutive_losses = getattr(self.state, "consecutive_losses", 0) + 1
+        else:
+            self.state.consecutive_losses = 0
 
         # Update drawdown tracking
         self.state.peak_pnl = max(self.state.peak_pnl, self.state.realized_pnl)

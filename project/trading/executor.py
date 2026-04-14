@@ -41,6 +41,8 @@ MARKET_CLOSE = dt_time(15, 30)
 DEFAULT_GAP_THRESHOLD = 4.0      # Proven PF 2.055
 DEFAULT_VOL_THRESHOLD = 2.5      # Proven PF 2.055
 DEFAULT_TOP_N = 4                # Max simultaneous trades
+SLIPPAGE_PCT = 0.001             # 0.1% slippage buffer on entry orders
+TRAILING_SL_ENABLED = True       # Move SL to breakeven at 1R profit
 
 
 @dataclass
@@ -245,6 +247,49 @@ class TradingExecutor:
         if risk <= 0 or candle_range <= 0:
             return None
 
+        # Multi-timeframe: check 5-min candle for tighter confirmation
+        try:
+            intra_5m = tk.history(period="1d", interval="5m")
+            if not intra_5m.empty and len(intra_5m) >= 3:
+                # The 3rd 5-min candle (9:25-9:30) should confirm direction
+                confirm_candle = intra_5m.iloc[2] if len(intra_5m) > 2 else intra_5m.iloc[-1]
+                c_close = float(confirm_candle["Close"])
+                c_open = float(confirm_candle["Open"])
+                # Confirmation: 5-min candle closes in gap direction
+                if direction == "LONG" and c_close < c_open:
+                    return None  # 5-min bearish candle contradicts gap-up
+                if direction == "SHORT" and c_close > c_open:
+                    return None  # 5-min bullish candle contradicts gap-down
+        except Exception:
+            pass  # If 5-min data fails, proceed with 15-min only
+
+        # Peer comparison: check sector gap to isolate unique strength
+        unique_gap = gap_pct  # Default: full gap is unique
+        try:
+            from project.data.sectors import get_sector, get_sector_stocks
+            sector = get_sector(yf_ticker)
+            if sector:
+                sector_stocks = get_sector_stocks(sector)[:5]  # Sample 5 peers
+                peer_gaps = []
+                for peer in sector_stocks:
+                    if peer == yf_ticker:
+                        continue
+                    try:
+                        p_daily = yf.Ticker(peer).history(period="5d", interval="1d")
+                        if len(p_daily) >= 2:
+                            p_gap = gap_percentage(
+                                float(p_daily.iloc[-1]["Open"]),
+                                float(p_daily.iloc[-2]["Close"])
+                            )
+                            peer_gaps.append(p_gap)
+                    except Exception:
+                        continue
+                if peer_gaps:
+                    sector_avg_gap = sum(peer_gaps) / len(peer_gaps)
+                    unique_gap = gap_pct - sector_avg_gap  # Excess gap over sector
+        except Exception:
+            pass
+
         return ScanResult(
             ticker=ticker,
             direction=direction,
@@ -314,7 +359,13 @@ class TradingExecutor:
                 self._live_place(trade, pick)
 
     def _paper_place(self, trade: TradeOrder, pick: ScanResult):
-        """Simulate order placement in paper mode."""
+        """Simulate order placement in paper mode with slippage."""
+        # Apply slippage buffer — real market won't fill exactly at signal price
+        if trade.side == OrderSide.BUY:
+            trade.entry_price = round(trade.entry_price * (1 + SLIPPAGE_PCT), 2)
+        else:
+            trade.entry_price = round(trade.entry_price * (1 - SLIPPAGE_PCT), 2)
+
         trade.status = OrderStatus.PLACED
         trade.order_id = f"PAPER-{len(self.paper_trades)+1}"
         trade.placed_at = datetime.now().strftime("%H:%M:%S")
@@ -323,6 +374,8 @@ class TradingExecutor:
             "trade": trade,
             "pick": pick,
             "status": "OPEN",
+            "trail_sl": trade.stoploss,
+            "breakeven_moved": False,
         })
         self.risk.record_trade_entry()
         self.daily_log.trades_placed += 1
@@ -376,7 +429,7 @@ class TradingExecutor:
             time.sleep(30)  # Check every 30 seconds
 
     def _paper_monitor(self):
-        """Check paper trades against live prices."""
+        """Check paper trades against live prices with trailing stoploss."""
         for pt in self.paper_trades:
             if pt["status"] != "OPEN":
                 continue
@@ -392,22 +445,44 @@ class TradingExecutor:
                 if data.empty:
                     continue
                 current_price = float(data.iloc[-1]["Close"])
+                current_high = float(data.iloc[-1]["High"])
+                current_low = float(data.iloc[-1]["Low"])
             except Exception:
                 continue
 
+            risk = abs(trade.entry_price - trade.stoploss)
+            trail_sl = pt.get("trail_sl", trade.stoploss)
+
+            # Trailing stoploss: move SL to breakeven at 1R profit
+            if TRAILING_SL_ENABLED and risk > 0:
+                if trade.side == OrderSide.BUY:
+                    if current_high >= trade.entry_price + risk and not pt.get("breakeven_moved"):
+                        trail_sl = trade.entry_price + 0.5  # Tiny buffer above entry
+                        pt["breakeven_moved"] = True
+                        pt["trail_sl"] = trail_sl
+                        self._alert(f"📊 {trade.ticker} — SL moved to breakeven ₹{trail_sl:.2f}")
+                else:
+                    if current_low <= trade.entry_price - risk and not pt.get("breakeven_moved"):
+                        trail_sl = trade.entry_price - 0.5
+                        pt["breakeven_moved"] = True
+                        pt["trail_sl"] = trail_sl
+                        self._alert(f"📊 {trade.ticker} — SL moved to breakeven ₹{trail_sl:.2f}")
+
             # Check SL / Target hit
             if trade.side == OrderSide.BUY:
-                if current_price <= trade.stoploss:
-                    pnl = (trade.stoploss - trade.entry_price) * trade.quantity
-                    self._paper_exit(pt, trade.stoploss, pnl, "LOSS")
-                elif current_price >= trade.target:
+                if current_low <= trail_sl:
+                    pnl = (trail_sl - trade.entry_price) * trade.quantity
+                    result = "WIN" if pnl > 0 else "LOSS"
+                    self._paper_exit(pt, trail_sl, pnl, result)
+                elif current_high >= trade.target:
                     pnl = (trade.target - trade.entry_price) * trade.quantity
                     self._paper_exit(pt, trade.target, pnl, "WIN")
             else:
-                if current_price >= trade.stoploss:
-                    pnl = (trade.entry_price - trade.stoploss) * trade.quantity
-                    self._paper_exit(pt, trade.stoploss, pnl, "LOSS")
-                elif current_price <= trade.target:
+                if current_high >= trail_sl:
+                    pnl = (trade.entry_price - trail_sl) * trade.quantity
+                    result = "WIN" if pnl > 0 else "LOSS"
+                    self._paper_exit(pt, trail_sl, pnl, result)
+                elif current_low <= trade.target:
                     pnl = (trade.entry_price - trade.target) * trade.quantity
                     self._paper_exit(pt, trade.target, pnl, "WIN")
 
