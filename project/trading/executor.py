@@ -340,55 +340,81 @@ class TradingExecutor:
     # ── Ranking ───────────────────────────────────────────────────────────
 
     def _rank_and_select(self, candidates: list[ScanResult]) -> list[ScanResult]:
-        """Rank candidates using AI model + conviction score, filter by confidence."""
-        # Try AI scoring first
-        ai_scored = False
+        """Filter candidates using Win Classifier, then rank by win probability."""
+        import numpy as np
+
+        # Try Win Classifier first (30-feature model predicting P(win))
+        ai_filtered = False
         try:
-            from project.ml.model import BreakoutRanker, MODEL_DIR
+            from project.ml.win_classifier import WinClassifier, ALL_FEATURES
             from project.ml.features import build_breakout_features_for_day
-            import os
-            import yfinance as yf
 
-            model_path = os.path.join(MODEL_DIR, "breakout_ranker_all_nse.joblib")
-            if os.path.exists(model_path):
-                ranker = BreakoutRanker.load("All NSE")
-                self.daily_log.log_event("Using AI BreakoutRanker for scoring")
+            clf = WinClassifier()
+            if clf.load():
+                self.daily_log.log_event(
+                    f"Using Win Classifier (30 features, {clf.n_samples} samples)"
+                )
 
+                scored_candidates = []
                 for c in candidates:
                     try:
                         yf_ticker = c.ticker if c.ticker.endswith(".NS") else f"{c.ticker}.NS"
-                        daily = yf.Ticker(yf_ticker).history(period="30d", interval="1d")
-                        if len(daily) >= 5:
-                            features = build_breakout_features_for_day(daily, daily.iloc[-1])
-                            if features is not None:
-                                score = ranker.predict_proba(features)
-                                c.model_score = float(score)
-                                continue
-                    except Exception:
-                        pass
-                    # Fallback: simple conviction score normalized to 0-1
-                    c.model_score = min(abs(c.gap_pct) * c.rel_vol / 100, 1.0)
+                        tk = yf.Ticker(yf_ticker)
+                        daily = tk.history(period="60d", interval="1d")
+                        if len(daily) < 30:
+                            continue
 
-                ai_scored = True
+                        day_idx = len(daily) - 1
+                        # Base 20 features
+                        base_feat = build_breakout_features_for_day(daily, day_idx)
+                        if base_feat is None:
+                            continue
+
+                        # Extra 10 features
+                        extra_feat = clf.build_extra_features(daily, day_idx)
+                        if extra_feat is None:
+                            continue
+
+                        all_feat = {**base_feat, **extra_feat}
+                        feature_vec = np.array(
+                            [all_feat[col] for col in ALL_FEATURES], dtype=np.float32
+                        )
+
+                        take, win_prob = clf.should_take_trade(feature_vec)
+                        c.model_score = win_prob
+
+                        if take:
+                            scored_candidates.append(c)
+                            self.daily_log.log_event(
+                                f"  ✅ {c.ticker} P(win)={win_prob:.0%} gap={c.gap_pct:+.1f}%"
+                            )
+                        else:
+                            self.daily_log.log_event(
+                                f"  ❌ {c.ticker} P(win)={win_prob:.0%} — SKIPPED (below 55%)"
+                            )
+                    except Exception as exc:
+                        log.debug("Win classifier error for %s: %s", c.ticker, exc)
+                        continue
+
+                candidates = scored_candidates
+                ai_filtered = True
         except Exception as exc:
-            self.daily_log.log_event(f"AI scoring unavailable: {exc}")
+            self.daily_log.log_event(f"Win classifier unavailable: {exc}")
 
-        if not ai_scored:
-            # Simple ranking: |gap| × rel_vol as conviction score
+        if not ai_filtered:
+            # Fallback: simple conviction score
             for c in candidates:
                 c.model_score = min(abs(c.gap_pct) * c.rel_vol / 100, 1.0)
+            candidates = [c for c in candidates if c.model_score >= MIN_AI_CONFIDENCE]
 
-        # Filter by minimum confidence
-        candidates = [c for c in candidates if c.model_score >= MIN_AI_CONFIDENCE]
-
-        # Sort by AI score (highest first)
+        # Sort by win probability (highest first)
         candidates.sort(key=lambda x: x.model_score, reverse=True)
         top = candidates[:self.top_n]
 
         self.daily_log.log_event(
-            f"Top {len(top)} picks (AI={'YES' if ai_scored else 'NO'}): "
+            f"Selected {len(top)}/{len(candidates)} (AI={'YES' if ai_filtered else 'NO'}): "
             + ", ".join(
-                f"{c.ticker} ({c.direction} gap={c.gap_pct:+.1f}% score={c.model_score:.2f})"
+                f"{c.ticker} (P(win)={c.model_score:.0%} gap={c.gap_pct:+.1f}%)"
                 for c in top
             )
         )
