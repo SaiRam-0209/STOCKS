@@ -125,31 +125,39 @@ class AngelBroker:
 
     # ── Market Data ───────────────────────────────────────────────────────
 
-    def get_ltp(self, symbol_token: str, exchange: str = "NSE") -> float | None:
-        """Get last traded price for a symbol."""
+    def get_ltp(self, ticker: str, exchange: str = "NSE") -> float | None:
+        """Get last traded price for a ticker (auto-resolves symbol token)."""
         self._require_login()
+        token, trading_sym = self._resolve_symbol(ticker)
+        if not token:
+            log.error("Cannot resolve symbol token for %s", ticker)
+            return None
         try:
-            resp = self.smart.ltpData(exchange, symbol_token, symbol_token)
+            resp = self.smart.ltpData(exchange, trading_sym, token)
             if resp and resp.get("data"):
                 return float(resp["data"]["ltp"])
         except Exception as exc:
-            log.error("LTP fetch failed for %s: %s", symbol_token, exc)
+            log.error("LTP fetch failed for %s: %s", ticker, exc)
         return None
 
     def get_candle_data(
         self,
-        symbol_token: str,
+        ticker: str,
         exchange: str = "NSE",
         interval: str = "FIFTEEN_MINUTE",
         from_date: str = "",
         to_date: str = "",
     ) -> list[dict]:
-        """Fetch historical/intraday candle data."""
+        """Fetch historical/intraday candle data (auto-resolves symbol token)."""
         self._require_login()
+        token, _ = self._resolve_symbol(ticker)
+        if not token:
+            log.error("Cannot resolve symbol token for %s", ticker)
+            return []
         try:
             params = {
                 "exchange": exchange,
-                "symboltoken": symbol_token,
+                "symboltoken": token,
                 "interval": interval,
                 "fromdate": from_date,
                 "todate": to_date,
@@ -160,6 +168,15 @@ class AngelBroker:
         except Exception as exc:
             log.error("Candle data fetch failed: %s", exc)
         return []
+
+    def _resolve_symbol(self, ticker: str) -> tuple[str | None, str | None]:
+        """Resolve a ticker name to (token, trading_symbol) using SymbolMapper."""
+        if not hasattr(self, "_symbol_mapper"):
+            from project.broker.symbols import SymbolMapper
+            self._symbol_mapper = SymbolMapper()
+        token = self._symbol_mapper.get_token(ticker)
+        trading_sym = self._symbol_mapper.get_trading_symbol(ticker)
+        return token, trading_sym
 
     # ── Order Placement ───────────────────────────────────────────────────
 
