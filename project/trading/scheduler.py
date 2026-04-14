@@ -151,6 +151,91 @@ def evening_report_job():
             alert_fn(msg)
 
 
+def nightly_retrain_job():
+    """Run at 6:00 PM IST — retrain AI model with today's new data.
+
+    Downloads latest daily data for 500 stocks, builds training samples
+    from all qualifying gap days, and retrains the Win Classifier.
+    Sends results to Telegram so you know if the model improved.
+    """
+    if not _is_weekday():
+        return
+
+    alert_fn = _get_alert()
+    now = _now_ist()
+    log.info("Nightly retrain starting — %s", now.strftime("%Y-%m-%d %H:%M"))
+
+    try:
+        import numpy as np
+        import yfinance as yf
+        from project.ml.win_classifier import WinClassifier
+        from project.data.nse_stocks import NSE_ALL_SYMBOLS
+
+        clf = WinClassifier()
+        old_loaded = clf.load()
+        old_samples = clf.n_samples if old_loaded else 0
+        old_wr = clf.win_rate_train if old_loaded else 0
+
+        # Collect training data from all stocks
+        all_X = []
+        all_y = []
+        symbols = NSE_ALL_SYMBOLS[:500]
+
+        for i, sym in enumerate(symbols):
+            try:
+                df = yf.download(sym + '.NS', period='2y', interval='1d', progress=False)
+                if hasattr(df.columns, 'levels'):
+                    df.columns = df.columns.droplevel(1)
+                if df is None or len(df) < 50:
+                    continue
+                X, y = clf.build_training_data(df)
+                if len(X) > 0:
+                    all_X.append(X)
+                    all_y.append(y)
+            except Exception:
+                continue
+
+        if not all_X:
+            log.warning("Nightly retrain: no training data collected")
+            return
+
+        X_all = np.vstack(all_X)
+        y_all = np.concatenate(all_y)
+
+        new_clf = WinClassifier()
+        result = new_clf.train(X_all, y_all)
+
+        if "error" in result:
+            log.error("Retrain failed: %s", result["error"])
+            return
+
+        new_clf.save()
+        log.info("Retrain complete: %d samples, WR %.1f%%",
+                 result["n_samples"], result["train_win_rate"])
+
+        # Report
+        if alert_fn:
+            top_feats = result.get("top_features", [])[:5]
+            feat_str = "\n".join(
+                f"  {i+1}. {name} ({score:.1%})"
+                for i, (name, score) in enumerate(top_feats)
+            )
+            alert_fn(
+                f"🧠 <b>Nightly Model Retrain Complete</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 Samples: {old_samples} → <b>{result['n_samples']}</b>\n"
+                f"✅ Wins: {result['n_wins']} | ❌ Losses: {result['n_losses']}\n"
+                f"📈 Train WR: {old_wr:.1f}% → <b>{result['train_win_rate']:.1f}%</b>\n\n"
+                f"<b>Top features:</b>\n{feat_str}\n\n"
+                f"<i>Model saved. Active from next scan.</i>"
+            )
+
+    except Exception as exc:
+        log.exception("Nightly retrain error: %s", exc)
+        if alert_fn:
+            alert_fn(f"⚠️ Nightly retrain failed: {exc}")
+
+
 def heartbeat_job():
     """Run every hour — log that the scheduler is alive."""
     now = _now_ist()
@@ -177,7 +262,8 @@ def main():
             "Daily schedule (IST):\n"
             "• 9:00 AM — Pre-market preview\n"
             "• 9:30 AM — Main trading session\n"
-            "• 4:00 PM — End of day report"
+            "• 4:00 PM — End of day report\n"
+            "• 6:00 PM — AI model retrain"
         )
 
     # Convert IST times to server local time for scheduling
@@ -197,12 +283,15 @@ def main():
     t_pre = ist_to_local(9, 0)
     t_scan = ist_to_local(9, 30)
     t_eod = ist_to_local(16, 0)
+    t_retrain = ist_to_local(18, 0)
 
-    log.info("Scheduled (local): pre-market=%s, scan=%s, eod=%s", t_pre, t_scan, t_eod)
+    log.info("Scheduled (local): pre-market=%s, scan=%s, eod=%s, retrain=%s",
+             t_pre, t_scan, t_eod, t_retrain)
 
     schedule.every().day.at(t_pre).do(pre_market_scan_job)
     schedule.every().day.at(t_scan).do(morning_scan_job)
     schedule.every().day.at(t_eod).do(evening_report_job)
+    schedule.every().day.at(t_retrain).do(nightly_retrain_job)
     schedule.every().hour.do(heartbeat_job)
 
     while True:
