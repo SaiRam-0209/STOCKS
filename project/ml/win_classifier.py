@@ -21,6 +21,7 @@ from project.ml.features import (
     BREAKOUT_FEATURE_COLUMNS,
 )
 from project.ml.features_v2 import V2_FEATURE_COLUMNS, build_v2_features
+from project.ml.features_v3 import V3_FEATURE_COLUMNS, build_v3_features
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")
 
@@ -38,7 +39,7 @@ EXTRA_FEATURES = [
     "price_level",               # Log of stock price (penny vs large cap)
 ]
 
-ALL_FEATURES = BREAKOUT_FEATURE_COLUMNS + EXTRA_FEATURES + V2_FEATURE_COLUMNS
+ALL_FEATURES = BREAKOUT_FEATURE_COLUMNS + EXTRA_FEATURES + V2_FEATURE_COLUMNS + V3_FEATURE_COLUMNS
 MIN_WIN_PROBABILITY = 0.55  # Minimum predicted probability to take a trade
 
 
@@ -233,12 +234,16 @@ class WinClassifier:
         price_min: float = 50.0,
         price_max: float = 5000.0,
         nifty_df: pd.DataFrame | None = None,
+        symbol: str = "",
     ) -> tuple[np.ndarray, np.ndarray]:
         """Build features + win/loss labels for all qualifying gap days.
 
         `nifty_df` enables V2 market-context features. If None, those
         features fall back to neutral defaults and the model loses the
         index-relative signal.
+
+        `symbol` enables V3 features (delivery %, OI, sector peers). If
+        empty, V3 features fall back to neutral defaults.
         """
         if len(daily_df) < 50:
             return np.empty((0, len(ALL_FEATURES))), np.empty(0)
@@ -284,8 +289,13 @@ class WinClassifier:
             # V2 features (market context + microstructure)
             v2_feat = build_v2_features(daily_df, i, nifty_df=nifty_df)
 
+            # V3 features (external data: VIX, DII, delivery, OI, PCR, blocks, peers)
+            trade_date = daily_df.index[i]
+            td = trade_date.date() if hasattr(trade_date, "date") else trade_date
+            v3_feat = build_v3_features(symbol or "", td, daily_df, i)
+
             # Combine
-            all_feat = {**base_feat, **extra_feat, **v2_feat}
+            all_feat = {**base_feat, **extra_feat, **v2_feat, **v3_feat}
             feature_vec = np.array(
                 [all_feat[col] for col in ALL_FEATURES], dtype=np.float32
             )

@@ -112,3 +112,32 @@ def _default_flow() -> dict:
         "vix_level": 15.0,
         "rupee_change_5d": 0.0,
     }
+
+
+def fetch_vix_level() -> float:
+    """Current India VIX close. Fallback: 15.0 (long-run median)."""
+    try:
+        vix = yf.Ticker("^INDIAVIX")
+        hist = vix.history(period="5d")
+        if hist.empty:
+            return 15.0
+        return round(float(hist["Close"].iloc[-1]), 2)
+    except Exception as exc:
+        log.warning("VIX fetch failed: %s", exc)
+        return 15.0
+
+
+def fetch_dii_flow_score() -> float:
+    """DII-component of the institutional flow score, in [-1, 1].
+
+    Positive = DII net buying (domestic support), negative = DII selling.
+    Uses the inverse of FII flow as a DII proxy — when FII sells, DII
+    typically absorbs, and vice versa.
+    """
+    try:
+        flow = fetch_institutional_flow()
+        fii_score = flow["flow_score"]
+        return round(-fii_score * 0.8, 4)
+    except Exception as exc:
+        log.warning("DII flow score failed: %s", exc)
+        return 0.0

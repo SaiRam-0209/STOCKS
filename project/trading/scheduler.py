@@ -200,7 +200,7 @@ def nightly_retrain_job():
                     df.columns = df.columns.droplevel(1)
                 if df is None or len(df) < 50:
                     continue
-                X, y = clf.build_training_data(df, nifty_df=nifty_df)
+                X, y = clf.build_training_data(df, nifty_df=nifty_df, symbol=sym)
                 if len(X) > 0:
                     all_X.append(X)
                     all_y.append(y)

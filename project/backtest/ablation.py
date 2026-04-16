@@ -1,8 +1,9 @@
-"""Feature-ablation backtest: does V2 actually help pick profitable stocks?
+"""Feature-ablation backtest: do V2/V3 features help pick profitable stocks?
 
-Trains two models on identical historical data:
+Trains three models on identical historical data:
     (A) Old:  30 features (BREAKOUT + EXTRA)
-    (B) New:  43 features (+ V2 market-context + microstructure)
+    (B) V2:   43 features (+ market-context + microstructure)
+    (C) V3:   50 features (+ VIX, DII, delivery, OI, PCR, blocks, peers)
 
 Walks forward chronologically, predicts the held-out tail, and compares:
     - Precision@top-K (did the high-ranked picks actually win?)
@@ -27,6 +28,7 @@ from project.ml.features import (
     build_breakout_features_for_day,
 )
 from project.ml.features_v2 import V2_FEATURE_COLUMNS, build_v2_features
+from project.ml.features_v3 import V3_FEATURE_COLUMNS, build_v3_features
 from project.ml.win_classifier import EXTRA_FEATURES, WinClassifier
 from project.data.nse_stocks import NSE_ALL_SYMBOLS
 
@@ -34,6 +36,7 @@ log = logging.getLogger(__name__)
 
 BASE_FEATURES = BREAKOUT_FEATURE_COLUMNS + EXTRA_FEATURES
 FULL_FEATURES = BASE_FEATURES + V2_FEATURE_COLUMNS
+V3_FEATURES = FULL_FEATURES + V3_FEATURE_COLUMNS
 
 
 def collect_samples(
@@ -86,11 +89,15 @@ def collect_samples(
                 continue
             v2 = build_v2_features(df, i, nifty_df=nifty_df)
 
+            trade_date = df.index[i]
+            td = trade_date.date() if hasattr(trade_date, "date") else trade_date
+            v3 = build_v3_features(sym, td, df, i)
+
             label = clf.build_win_label(df, i)
             fwd_return_pct = (float(closes[i]) - open_px) / open_px * 100
 
             row = {"date": df.index[i], "symbol": sym, "label": label,
-                   "fwd_return_pct": fwd_return_pct, **base, **extra, **v2}
+                   "fwd_return_pct": fwd_return_pct, **base, **extra, **v2, **v3}
             rows.append(row)
 
     if not rows:
@@ -179,30 +186,42 @@ def main():
         log.error("Not enough samples for ablation. Try --symbols 500+")
         return
 
-    log.info("\n== Model A: OLD features (%d) ==", len(BASE_FEATURES))
+    log.info("\n== Model A: BASE features (%d) ==", len(BASE_FEATURES))
     a = score_feature_set(samples, BASE_FEATURES, args.test_frac, args.top_k)
     log.info("  avg daily return: %+.2f%% | hit rate: %.1f%% | PF: %.2f | Sharpe: %.2f",
              a["avg_daily_return_pct"], a["hit_rate"] * 100,
              a["profit_factor"], a["sharpe_proxy"])
 
-    log.info("\n== Model B: NEW features (%d) ==", len(FULL_FEATURES))
+    log.info("\n== Model B: V2 features (%d) ==", len(FULL_FEATURES))
     b = score_feature_set(samples, FULL_FEATURES, args.test_frac, args.top_k)
     log.info("  avg daily return: %+.2f%% | hit rate: %.1f%% | PF: %.2f | Sharpe: %.2f",
              b["avg_daily_return_pct"], b["hit_rate"] * 100,
              b["profit_factor"], b["sharpe_proxy"])
 
-    lift_return = b["avg_daily_return_pct"] - a["avg_daily_return_pct"]
-    lift_pf = b["profit_factor"] - a["profit_factor"]
-    log.info("\n== Lift from V2 features ==")
-    log.info("  return: %+.2f pp/day | PF: %+.2f | hit-rate: %+.1f pp",
-             lift_return, lift_pf, (b["hit_rate"] - a["hit_rate"]) * 100)
+    log.info("\n== Model C: V3 features (%d) ==", len(V3_FEATURES))
+    c = score_feature_set(samples, V3_FEATURES, args.test_frac, args.top_k)
+    log.info("  avg daily return: %+.2f%% | hit rate: %.1f%% | PF: %.2f | Sharpe: %.2f",
+             c["avg_daily_return_pct"], c["hit_rate"] * 100,
+             c["profit_factor"], c["sharpe_proxy"])
 
-    if lift_return > 0.1 and lift_pf > 0:
-        log.info("  OK V2 features help — keep them")
-    elif lift_return < -0.1:
-        log.info("  X V2 features hurt — consider removing")
+    log.info("\n== Lift: V2 over BASE ==")
+    lift_b = b["avg_daily_return_pct"] - a["avg_daily_return_pct"]
+    lift_pf_b = b["profit_factor"] - a["profit_factor"]
+    log.info("  return: %+.2f pp/day | PF: %+.2f | hit-rate: %+.1f pp",
+             lift_b, lift_pf_b, (b["hit_rate"] - a["hit_rate"]) * 100)
+
+    log.info("\n== Lift: V3 over V2 ==")
+    lift_c = c["avg_daily_return_pct"] - b["avg_daily_return_pct"]
+    lift_pf_c = c["profit_factor"] - b["profit_factor"]
+    log.info("  return: %+.2f pp/day | PF: %+.2f | hit-rate: %+.1f pp",
+             lift_c, lift_pf_c, (c["hit_rate"] - b["hit_rate"]) * 100)
+
+    if lift_c > 0.1 and lift_pf_c > 0:
+        log.info("  ✅ V3 features help — keep them")
+    elif lift_c < -0.1:
+        log.info("  ❌ V3 features hurt — consider removing")
     else:
-        log.info("  - V2 features ~ neutral — re-evaluate after more data")
+        log.info("  ➖ V3 features ~ neutral — re-evaluate after more data")
 
 
 if __name__ == "__main__":

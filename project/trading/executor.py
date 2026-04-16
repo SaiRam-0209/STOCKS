@@ -349,6 +349,7 @@ class TradingExecutor:
             from project.ml.win_classifier import WinClassifier, ALL_FEATURES
             from project.ml.features import build_breakout_features_for_day
             from project.ml.features_v2 import build_v2_features
+            from project.ml.features_v3 import build_v3_features
 
             # Fetch Nifty once for all candidates (market-context features)
             try:
@@ -387,7 +388,12 @@ class TradingExecutor:
                         # V2 features (market context + microstructure)
                         v2_feat = build_v2_features(daily, day_idx, nifty_df=nifty_df)
 
-                        all_feat = {**base_feat, **extra_feat, **v2_feat}
+                        # V3 features (VIX, DII, delivery, OI, PCR, blocks, peers)
+                        v3_feat = build_v3_features(
+                            c.ticker, datetime.now().date(), daily, day_idx
+                        )
+
+                        all_feat = {**base_feat, **extra_feat, **v2_feat, **v3_feat}
                         feature_vec = np.array(
                             [all_feat[col] for col in ALL_FEATURES], dtype=np.float32
                         )
