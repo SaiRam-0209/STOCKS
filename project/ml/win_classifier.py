@@ -20,6 +20,7 @@ from project.ml.features import (
     build_breakout_features_for_day,
     BREAKOUT_FEATURE_COLUMNS,
 )
+from project.ml.features_v2 import V2_FEATURE_COLUMNS, build_v2_features
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")
 
@@ -37,7 +38,7 @@ EXTRA_FEATURES = [
     "price_level",               # Log of stock price (penny vs large cap)
 ]
 
-ALL_FEATURES = BREAKOUT_FEATURE_COLUMNS + EXTRA_FEATURES
+ALL_FEATURES = BREAKOUT_FEATURE_COLUMNS + EXTRA_FEATURES + V2_FEATURE_COLUMNS
 MIN_WIN_PROBABILITY = 0.55  # Minimum predicted probability to take a trade
 
 
@@ -231,8 +232,14 @@ class WinClassifier:
         vol_min: float = 2.5,
         price_min: float = 50.0,
         price_max: float = 5000.0,
+        nifty_df: pd.DataFrame | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Build features + win/loss labels for all qualifying gap days."""
+        """Build features + win/loss labels for all qualifying gap days.
+
+        `nifty_df` enables V2 market-context features. If None, those
+        features fall back to neutral defaults and the model loses the
+        index-relative signal.
+        """
         if len(daily_df) < 50:
             return np.empty((0, len(ALL_FEATURES))), np.empty(0)
 
@@ -274,8 +281,11 @@ class WinClassifier:
             if extra_feat is None:
                 continue
 
+            # V2 features (market context + microstructure)
+            v2_feat = build_v2_features(daily_df, i, nifty_df=nifty_df)
+
             # Combine
-            all_feat = {**base_feat, **extra_feat}
+            all_feat = {**base_feat, **extra_feat, **v2_feat}
             feature_vec = np.array(
                 [all_feat[col] for col in ALL_FEATURES], dtype=np.float32
             )

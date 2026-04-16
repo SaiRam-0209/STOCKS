@@ -343,16 +343,25 @@ class TradingExecutor:
         """Filter candidates using Win Classifier, then rank by win probability."""
         import numpy as np
 
-        # Try Win Classifier first (30-feature model predicting P(win))
+        # Try Win Classifier first (43-feature model predicting P(win))
         ai_filtered = False
         try:
             from project.ml.win_classifier import WinClassifier, ALL_FEATURES
             from project.ml.features import build_breakout_features_for_day
+            from project.ml.features_v2 import build_v2_features
+
+            # Fetch Nifty once for all candidates (market-context features)
+            try:
+                nifty_df = yf.Ticker("^NSEI").history(period="90d", interval="1d")
+                if len(nifty_df) < 20:
+                    nifty_df = None
+            except Exception:
+                nifty_df = None
 
             clf = WinClassifier()
             if clf.load():
                 self.daily_log.log_event(
-                    f"Using Win Classifier (30 features, {clf.n_samples} samples)"
+                    f"Using Win Classifier ({len(ALL_FEATURES)} features, {clf.n_samples} samples)"
                 )
 
                 scored_candidates = []
@@ -360,7 +369,7 @@ class TradingExecutor:
                     try:
                         yf_ticker = c.ticker if c.ticker.endswith(".NS") else f"{c.ticker}.NS"
                         tk = yf.Ticker(yf_ticker)
-                        daily = tk.history(period="60d", interval="1d")
+                        daily = tk.history(period="90d", interval="1d")
                         if len(daily) < 30:
                             continue
 
@@ -375,7 +384,10 @@ class TradingExecutor:
                         if extra_feat is None:
                             continue
 
-                        all_feat = {**base_feat, **extra_feat}
+                        # V2 features (market context + microstructure)
+                        v2_feat = build_v2_features(daily, day_idx, nifty_df=nifty_df)
+
+                        all_feat = {**base_feat, **extra_feat, **v2_feat}
                         feature_vec = np.array(
                             [all_feat[col] for col in ALL_FEATURES], dtype=np.float32
                         )

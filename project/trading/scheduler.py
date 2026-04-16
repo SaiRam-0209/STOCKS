@@ -176,6 +176,18 @@ def nightly_retrain_job():
         old_samples = clf.n_samples if old_loaded else 0
         old_wr = clf.win_rate_train if old_loaded else 0
 
+        # Fetch Nifty once — shared across all stocks for market-context features
+        try:
+            nifty_df = yf.download('^NSEI', period='2y', interval='1d', progress=False)
+            if hasattr(nifty_df.columns, 'levels'):
+                nifty_df.columns = nifty_df.columns.droplevel(1)
+            if nifty_df is None or len(nifty_df) < 20:
+                nifty_df = None
+                log.warning("Nifty fetch returned insufficient rows — V2 features disabled")
+        except Exception as exc:
+            nifty_df = None
+            log.warning("Nifty fetch failed: %s — V2 features disabled", exc)
+
         # Collect training data from all stocks
         all_X = []
         all_y = []
@@ -188,7 +200,7 @@ def nightly_retrain_job():
                     df.columns = df.columns.droplevel(1)
                 if df is None or len(df) < 50:
                     continue
-                X, y = clf.build_training_data(df)
+                X, y = clf.build_training_data(df, nifty_df=nifty_df)
                 if len(X) > 0:
                     all_X.append(X)
                     all_y.append(y)
