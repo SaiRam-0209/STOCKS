@@ -343,7 +343,7 @@ class TradingExecutor:
         """Filter candidates using Win Classifier, then rank by win probability."""
         import numpy as np
 
-        # Try Win Classifier first (43-feature model predicting P(win))
+        # Try Win Classifier first
         ai_filtered = False
         try:
             from project.ml.win_classifier import WinClassifier, ALL_FEATURES
@@ -361,6 +361,13 @@ class TradingExecutor:
 
             clf = WinClassifier()
             if clf.load():
+                if clf.n_features != len(ALL_FEATURES):
+                    self.daily_log.log_event(
+                        f"⚠️ Model has {clf.n_features} features but code expects "
+                        f"{len(ALL_FEATURES)} — falling back to non-AI ranking"
+                    )
+                    raise ValueError("feature count mismatch")
+
                 self.daily_log.log_event(
                     f"Using Win Classifier ({len(ALL_FEATURES)} features, {clf.n_samples} samples)"
                 )
