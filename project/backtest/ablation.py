@@ -42,10 +42,10 @@ V3_FEATURES = FULL_FEATURES + V3_FEATURE_COLUMNS
 def collect_samples(
     symbols: list[str],
     nifty_df: pd.DataFrame | None,
-    gap_min: float = 4.0,
-    vol_min: float = 2.5,
+    gap_min: float = 2.0,
+    vol_min: float = 1.5,
     price_min: float = 50.0,
-    price_max: float = 5000.0,
+    price_max: float = 10000.0,
 ) -> pd.DataFrame:
     """Walk every symbol's history and emit one row per qualifying gap day."""
     clf = WinClassifier()

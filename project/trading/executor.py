@@ -38,15 +38,15 @@ EOD_EXIT_TIME = dt_time(15, 15)
 MARKET_CLOSE = dt_time(15, 30)
 
 # ── Strategy defaults ────────────────────────────────────────────────────
-DEFAULT_GAP_THRESHOLD = 4.0      # Proven PF 2.055
-DEFAULT_VOL_THRESHOLD = 2.5      # Proven PF 2.055
+DEFAULT_GAP_THRESHOLD = 2.0      # Loose pre-filter; AI model is the real gatekeeper
+DEFAULT_VOL_THRESHOLD = 1.5      # Above-average volume, not exceptional
 DEFAULT_TOP_N = 4                # Max simultaneous trades
 SLIPPAGE_PCT = 0.001             # 0.1% slippage buffer on entry orders
 TRAILING_SL_ENABLED = True       # Move SL to breakeven at 1R profit
 MIN_STOCK_PRICE = 50.0           # Avoid penny stocks (noisy, wide spreads)
-MAX_STOCK_PRICE = 5000.0         # Avoid stocks where 1 share > 25% capital
+MAX_STOCK_PRICE = 10000.0        # Let position sizing handle expensive stocks
 SHORT_FILTER_ENABLED = True      # Only allow shorts in bearish markets
-MIN_AI_CONFIDENCE = 0.3          # Minimum AI model score to take a trade
+MIN_AI_CONFIDENCE = 0.2          # Fallback threshold when AI model unavailable
 
 
 @dataclass

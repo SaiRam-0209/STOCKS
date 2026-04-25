@@ -40,7 +40,7 @@ EXTRA_FEATURES = [
 ]
 
 ALL_FEATURES = BREAKOUT_FEATURE_COLUMNS + EXTRA_FEATURES + V2_FEATURE_COLUMNS + V3_FEATURE_COLUMNS
-MIN_WIN_PROBABILITY = 0.55  # Minimum predicted probability to take a trade
+MIN_WIN_PROBABILITY = 0.35  # Backtested: 73% WR at 0.35 vs 82% at 0.55 but 5x more trades
 
 
 class WinClassifier:
@@ -229,10 +229,10 @@ class WinClassifier:
     def build_training_data(
         self,
         daily_df: pd.DataFrame,
-        gap_min: float = 4.0,
-        vol_min: float = 2.5,
+        gap_min: float = 2.0,
+        vol_min: float = 1.5,
         price_min: float = 50.0,
-        price_max: float = 5000.0,
+        price_max: float = 10000.0,
         nifty_df: pd.DataFrame | None = None,
         symbol: str = "",
     ) -> tuple[np.ndarray, np.ndarray]:
