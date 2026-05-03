@@ -1,5 +1,7 @@
 """Boom predictor: orchestrates news + macro + ML to rank gap breakout stocks."""
 
+from __future__ import annotations
+
 import numpy as np
 import os
 import joblib

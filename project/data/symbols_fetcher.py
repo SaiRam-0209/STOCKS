@@ -4,6 +4,8 @@ Fetches all NSE equity stocks + F&O list from NSE endpoints.
 Caches results locally to avoid repeated API calls.
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import json
@@ -125,6 +127,13 @@ def get_all_nse_stocks() -> list[str]:
     Returns deduplicated, sorted list.
     """
     raw = fetch_all_nse_symbols()
+    if not raw:
+        try:
+            from project.data.nse_stocks import NSE_ALL_SYMBOLS
+            raw = NSE_ALL_SYMBOLS
+            print(f"  Using baked NSE fallback list ({len(raw)} symbols)")
+        except Exception:
+            raw = []
     return sorted(set(f"{s}.NS" for s in raw))
 
 

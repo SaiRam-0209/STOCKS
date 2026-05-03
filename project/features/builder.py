@@ -1,5 +1,7 @@
 """Build feature set for each stock from raw OHLCV data."""
 
+from __future__ import annotations
+
 import pandas as pd
 
 from project.data.fetcher import fetch_daily, fetch_prev_close

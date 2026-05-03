@@ -8,6 +8,8 @@ All features are computable from data known BEFORE market open, so there
 is zero look-ahead bias in live prediction.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from project.features.indicators import gap_percentage, relative_volume, ema, atr

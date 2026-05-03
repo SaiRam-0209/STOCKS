@@ -13,6 +13,8 @@ Usage:
     alert.send("TATASTEEL gapped +5.2% — BUY signal!")
 """
 
+from __future__ import annotations
+
 import os
 import logging
 import requests

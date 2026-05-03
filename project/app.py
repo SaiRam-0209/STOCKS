@@ -1,5 +1,7 @@
 """Main entry point for the Intraday Stock Scanner."""
 
+from __future__ import annotations
+
 import sys
 
 from project.data.fetcher import fetch_all_stocks, fetch_daily

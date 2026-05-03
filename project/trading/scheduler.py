@@ -10,6 +10,7 @@ Can also run locally:
 import os
 import sys
 import time
+import argparse
 import logging
 import schedule
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,14 @@ try:
 except ImportError:
     pass  # Railway injects env vars directly
 
-from project.trading.executor import TradingExecutor
+# V2 executor with regime detection, confidence sizing, all filters
+try:
+    from project.trading.executor_v2 import TradingExecutorV2 as TradingExecutor
+    _V2_EXECUTOR = True
+except ImportError:
+    from project.trading.executor import TradingExecutor
+    _V2_EXECUTOR = False
+
 from project.alerts.telegram import TelegramAlert
 
 # IST timezone (UTC+5:30)
@@ -71,15 +79,27 @@ def morning_scan_job():
 
     capital = float(os.getenv("TRADING_CAPITAL", "10000"))
     mode = os.getenv("TRADING_MODE", "paper")
+    aggressive = os.getenv("AGGRESSIVE_MODE", "false").lower() == "true"
 
-    executor = TradingExecutor(
-        mode=mode,
-        capital=capital,
-        gap_threshold=4.0,
-        vol_threshold=2.5,
-        top_n=4,
-        alert_callback=alert_fn,
-    )
+    if _V2_EXECUTOR:
+        executor = TradingExecutor(
+            mode=mode,
+            capital=capital,
+            gap_threshold=4.0,
+            vol_threshold=2.5,
+            top_n=4,
+            aggressive_mode=aggressive,
+            alert_callback=alert_fn,
+        )
+    else:
+        executor = TradingExecutor(
+            mode=mode,
+            capital=capital,
+            gap_threshold=4.0,
+            vol_threshold=2.5,
+            top_n=4,
+            alert_callback=alert_fn,
+        )
 
     daily_log = executor.run()
     log.info("Session complete: %d trades, P&L ₹%.2f",
@@ -168,10 +188,17 @@ def nightly_retrain_job():
     try:
         import numpy as np
         import yfinance as yf
-        from project.ml.win_classifier import WinClassifier
         from project.data.nse_stocks import NSE_ALL_SYMBOLS
 
-        clf = WinClassifier()
+        # Use V2 classifier (20 curated features, regime-aware)
+        try:
+            from project.ml.win_classifier_v2 import WinClassifierV2 as Classifier
+            use_v2 = True
+        except ImportError:
+            from project.ml.win_classifier import WinClassifier as Classifier
+            use_v2 = False
+
+        clf = Classifier()
         old_loaded = clf.load()
         old_samples = clf.n_samples if old_loaded else 0
         old_wr = clf.win_rate_train if old_loaded else 0
@@ -183,10 +210,10 @@ def nightly_retrain_job():
                 nifty_df.columns = nifty_df.columns.droplevel(1)
             if nifty_df is None or len(nifty_df) < 20:
                 nifty_df = None
-                log.warning("Nifty fetch returned insufficient rows — V2 features disabled")
+                log.warning("Nifty fetch returned insufficient rows")
         except Exception as exc:
             nifty_df = None
-            log.warning("Nifty fetch failed: %s — V2 features disabled", exc)
+            log.warning("Nifty fetch failed: %s", exc)
 
         # Collect training data from all stocks
         all_X = []
@@ -200,7 +227,10 @@ def nightly_retrain_job():
                     df.columns = df.columns.droplevel(1)
                 if df is None or len(df) < 50:
                     continue
-                X, y = clf.build_training_data(df, nifty_df=nifty_df, symbol=sym)
+                if use_v2:
+                    X, y = clf.build_training_data(df, nifty_df=nifty_df)
+                else:
+                    X, y = clf.build_training_data(df, nifty_df=nifty_df, symbol=sym)
                 if len(X) > 0:
                     all_X.append(X)
                     all_y.append(y)
@@ -214,16 +244,27 @@ def nightly_retrain_job():
         X_all = np.vstack(all_X)
         y_all = np.concatenate(all_y)
 
-        new_clf = WinClassifier()
+        new_clf = Classifier()
         result = new_clf.train(X_all, y_all)
 
         if "error" in result:
             log.error("Retrain failed: %s", result["error"])
             return
 
+        # Set validated threshold (from walk-forward validation)
+        if use_v2:
+            new_clf.optimal_threshold = 0.65
+            new_clf.regime_thresholds = {
+                'TRENDING_UP': 0.60,
+                'TRENDING_DOWN': 0.65,
+                'SIDEWAYS': 0.65,
+                'HIGH_VOLATILITY': 0.65,
+            }
+
         new_clf.save()
-        log.info("Retrain complete: %d samples, WR %.1f%%",
-                 result["n_samples"], result["train_win_rate"])
+        model_type = "V2 (20 features)" if use_v2 else "V1 (50 features)"
+        log.info("Retrain complete [%s]: %d samples, WR %.1f%%",
+                 model_type, result["n_samples"], result["train_win_rate"])
 
         # Report
         if alert_fn:
@@ -233,7 +274,7 @@ def nightly_retrain_job():
                 for i, (name, score) in enumerate(top_feats)
             )
             alert_fn(
-                f"🧠 <b>Nightly Model Retrain Complete</b>\n"
+                f"🧠 <b>Nightly Retrain [{model_type}]</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 Samples: {old_samples} → <b>{result['n_samples']}</b>\n"
                 f"✅ Wins: {result['n_wins']} | ❌ Losses: {result['n_losses']}\n"
@@ -252,6 +293,27 @@ def heartbeat_job():
     """Run every hour — log that the scheduler is alive."""
     now = _now_ist()
     log.info("Heartbeat — %s IST, scheduler alive", now.strftime("%H:%M"))
+
+
+ONE_OFF_JOBS = {
+    "pre-market": pre_market_scan_job,
+    "morning-scan": morning_scan_job,
+    "evening-report": evening_report_job,
+    "nightly-retrain": nightly_retrain_job,
+    "heartbeat": heartbeat_job,
+}
+
+
+def run_once(job_name: str):
+    """Run one scheduled task and exit.
+
+    This mode is intended for Cloud Run Jobs + Cloud Scheduler. The default
+    no-argument mode remains the long-running Railway scheduler.
+    """
+    job = ONE_OFF_JOBS[job_name]
+    log.info("Running one-off scheduler job: %s", job_name)
+    job()
+    log.info("One-off scheduler job complete: %s", job_name)
 
 
 def main():
@@ -312,4 +374,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="StockBot scheduler")
+    subparsers = parser.add_subparsers(dest="command")
+
+    run_parser = subparsers.add_parser("run", help="Run a single job and exit")
+    run_parser.add_argument("job", choices=sorted(ONE_OFF_JOBS))
+
+    args = parser.parse_args()
+    if args.command == "run":
+        run_once(args.job)
+    else:
+        main()

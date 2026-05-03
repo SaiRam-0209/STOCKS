@@ -10,6 +10,8 @@ Required env vars:
     ANGEL_TOTP_SECRET  — base32 secret from authenticator setup
 """
 
+from __future__ import annotations
+
 import os
 import logging
 from dataclasses import dataclass

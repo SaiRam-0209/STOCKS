@@ -8,6 +8,8 @@ The ranker uses rank:ndcg — within each group (trading day), it learns to
 order stocks by expected breakout strength.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import joblib
 import os

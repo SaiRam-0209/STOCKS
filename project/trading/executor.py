@@ -13,6 +13,8 @@ Usage:
     executor.run()
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from datetime import datetime, time as dt_time
@@ -190,6 +192,12 @@ class TradingExecutor:
 
         if self._symbols is None:
             self._symbols = get_all_nse_stocks()
+            if not self._symbols:
+                from project.data.symbols import ALL_STOCKS
+                self._symbols = ALL_STOCKS
+                self.daily_log.log_event(
+                    f"Dynamic NSE symbol load returned 0; using {len(self._symbols)} index stocks"
+                )
         self.daily_log.scanned_stocks = len(self._symbols)
 
         candidates = []
@@ -213,33 +221,42 @@ class TradingExecutor:
         """Check if a single stock qualifies for ORB trade today."""
         yf_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
 
-        # Fetch today's intraday data (15-min)
+        # Fetch recent intraday data. yfinance can return empty for NSE
+        # `period="1d"` outside some market windows, while 5d remains reliable.
         tk = yf.Ticker(yf_ticker)
-        intra = tk.history(period="1d", interval="15m")
-        if intra.empty or len(intra) < 1:
+        intra = tk.history(period="5d", interval="15m")
+        if intra.empty:
             return None
 
-        # Fetch recent daily data for prev close + volume
-        daily = tk.history(period="15d", interval="1d")
-        if daily.empty or len(daily) < 2:
+        session_dates = intra.index.date
+        today_intra = intra[session_dates == today]
+        if today_intra.empty:
+            return None
+
+        # Fetch completed daily data for prev close + average volume.
+        daily = tk.history(period="30d", interval="1d")
+        if daily.empty:
+            return None
+        completed_daily = daily[daily.index.date < today]
+        if len(completed_daily) < 2:
             return None
 
         # First 15-min candle
-        first_candle = intra.iloc[0]
+        first_candle = today_intra.iloc[0]
         today_open = float(first_candle["Open"])
         candle_high = float(first_candle["High"])
         candle_low = float(first_candle["Low"])
         candle_range = candle_high - candle_low
 
         # Previous close
-        prev_close = float(daily.iloc[-2]["Close"]) if len(daily) >= 2 else float(daily.iloc[-1]["Close"])
+        prev_close = float(completed_daily.iloc[-1]["Close"])
 
         # Gap percentage
         gap_pct = gap_percentage(today_open, prev_close)
 
         # Relative volume: today's first candle volume vs avg daily volume
         today_vol = float(first_candle["Volume"])
-        avg_vol = float(daily["Volume"].tail(10).mean())
+        avg_vol = float(completed_daily["Volume"].tail(10).mean())
         if avg_vol <= 0:
             return None
         # Scale intraday volume: 15-min volume × 25 (approx candles/day) to compare with daily
@@ -430,7 +447,10 @@ class TradingExecutor:
             # Fallback: simple conviction score
             for c in candidates:
                 c.model_score = min(abs(c.gap_pct) * c.rel_vol / 100, 1.0)
-            candidates = [c for c in candidates if c.model_score >= MIN_AI_CONFIDENCE]
+            if candidates:
+                self.daily_log.log_event(
+                    "AI filter unavailable; ranking primary candidates by gap/volume conviction"
+                )
 
         # Sort by win probability (highest first)
         candidates.sort(key=lambda x: x.model_score, reverse=True)

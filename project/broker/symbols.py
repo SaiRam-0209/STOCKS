@@ -4,6 +4,8 @@ Angel One API uses numeric 'symboltoken' values, not ticker names.
 This module downloads the master instrument list and provides fast lookups.
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging

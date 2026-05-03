@@ -7,6 +7,8 @@ Prevents catastrophic losses by enforcing:
     - Per-trade risk limit (never risk more than 2% of capital on one trade)
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime

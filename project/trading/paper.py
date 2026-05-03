@@ -8,6 +8,8 @@ Usage:
     log = run_paper_trading(capital=20000)
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging

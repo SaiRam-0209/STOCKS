@@ -8,6 +8,8 @@ Since there's no free reliable earnings calendar API, we use heuristics:
 This gives us a 0-1 score: how likely is this gap earnings-driven?
 """
 
+from __future__ import annotations
+
 import re
 from datetime import date
 

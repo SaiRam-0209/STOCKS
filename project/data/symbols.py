@@ -235,7 +235,7 @@ def _load_all_nse():
     try:
         from project.data.nse_stocks import NSE_ALL_SYMBOLS
         if NSE_ALL_SYMBOLS:
-            return NSE_ALL_SYMBOLS
+            return [s if s.endswith(".NS") else f"{s}.NS" for s in NSE_ALL_SYMBOLS]
     except Exception:
         pass
     return ALL_STOCKS  # last resort: index stocks only
