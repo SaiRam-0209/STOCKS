@@ -85,8 +85,8 @@ def morning_scan_job():
         executor = TradingExecutor(
             mode=mode,
             capital=capital,
-            gap_threshold=4.0,
-            vol_threshold=2.5,
+            gap_threshold=2.0,      # Lowered: AI model is the real filter
+            vol_threshold=1.5,      # Lowered: let more candidates through
             top_n=4,
             aggressive_mode=aggressive,
             alert_callback=alert_fn,
@@ -95,8 +95,8 @@ def morning_scan_job():
         executor = TradingExecutor(
             mode=mode,
             capital=capital,
-            gap_threshold=4.0,
-            vol_threshold=2.5,
+            gap_threshold=2.0,
+            vol_threshold=1.5,
             top_n=4,
             alert_callback=alert_fn,
         )
