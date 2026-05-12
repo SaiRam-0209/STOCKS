@@ -251,14 +251,14 @@ def nightly_retrain_job():
             log.error("Retrain failed: %s", result["error"])
             return
 
-        # Set validated threshold (from walk-forward validation)
+        # Set calibrated threshold (matches model output range 0.05-0.40)
         if use_v2:
-            new_clf.optimal_threshold = 0.65
+            new_clf.optimal_threshold = 0.20
             new_clf.regime_thresholds = {
-                'TRENDING_UP': 0.60,
-                'TRENDING_DOWN': 0.65,
-                'SIDEWAYS': 0.65,
-                'HIGH_VOLATILITY': 0.65,
+                'TRENDING_UP': 0.18,
+                'TRENDING_DOWN': 0.22,
+                'SIDEWAYS': 0.22,
+                'HIGH_VOLATILITY': 0.25,
             }
 
         new_clf.save()

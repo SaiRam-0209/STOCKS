@@ -106,8 +106,9 @@ class WinClassifierV2:
         self.win_rate_train: float = 0.0
         self.n_features: int = len(CURATED_FEATURES)
 
-        # Dynamic threshold — optimized during validation
-        self.optimal_threshold: float = 0.40
+        # Dynamic threshold — calibrated to actual model output
+        # With ~25% win rate, model outputs P(win) in 0.05–0.40 range
+        self.optimal_threshold: float = 0.20
         self.regime_thresholds: dict[str, float] = {}
 
     # ── Feature extraction ─────────────────────────────────────────────────
@@ -372,11 +373,16 @@ class WinClassifierV2:
     def classify_confidence(self, win_prob: float) -> str:
         """Classify the trade into a confidence bucket for position sizing.
 
+        Calibrated to actual model output range (~0.05 to ~0.40):
+            LOW:    bottom tier (prob < 0.18)
+            MEDIUM: middle tier (0.18 <= prob < 0.28)
+            HIGH:   top tier (prob >= 0.28)
+
         Returns: 'LOW', 'MEDIUM', or 'HIGH'
         """
-        if win_prob < 0.50:
+        if win_prob < 0.18:
             return "LOW"
-        elif win_prob < 0.65:
+        elif win_prob < 0.28:
             return "MEDIUM"
         else:
             return "HIGH"
