@@ -81,19 +81,22 @@ jobs:
             exit 1
           fi
 
-      - name: Commit updated model
+      - name: Pull latest (preserve WinClassifierV2 from GCP retrain)
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main --rebase
 
-          git add -f models/*.joblib
+      - name: Commit BreakoutRanker only
+        run: |
+          git add -f models/breakout_ranker_all_nse.joblib
 
           if git diff --cached --quiet; then
             echo "Model unchanged — nothing to commit."
           else
             git commit -m "chore: retrain BreakoutRanker $(date -u '+%Y-%m-%d')"
             git push
-            echo "Model pushed to repo."
+            echo "BreakoutRanker pushed to repo."
           fi
 
       # Clean up checkpoint artifact after successful training

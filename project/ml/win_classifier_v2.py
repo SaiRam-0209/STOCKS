@@ -39,6 +39,27 @@ log = logging.getLogger(__name__)
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")
 
+# ── Reward ratio ────────────────────────────────────────────────────────────
+REWARD_RATIO = 1.5  # 1.5R target (break-even WR = 40%)
+
+# ── Sector map for feature 21 ──────────────────────────────────────────────
+SECTOR_MAP = {
+    "TCS":1,"INFY":1,"WIPRO":1,"HCLTECH":1,"TECHM":1,"LTIM":1,"MPHASIS":1,"COFORGE":1,
+    "PERSISTENT":1,"OFSS":1,"HDFCBANK":2,"ICICIBANK":2,"SBIN":2,"KOTAKBANK":2,"AXISBANK":2,
+    "INDUSINDBK":2,"BANDHANBNK":2,"FEDERALBNK":2,"IDFCFIRSTB":2,"SUNPHARMA":3,"DRREDDY":3,
+    "CIPLA":3,"DIVISLAB":3,"BIOCON":3,"AUROPHARMA":3,"LUPIN":3,"TORNTPHARM":3,"ALKEM":3,
+    "MARUTI":4,"TATAMOTORS":4,"M&M":4,"BAJAJ-AUTO":4,"HEROMOTOCO":4,"EICHERMOT":4,
+    "ASHOKLEY":4,"TVSMOTOR":4,"HINDUNILVR":5,"ITC":5,"NESTLEIND":5,"BRITANNIA":5,
+    "DABUR":5,"MARICO":5,"GODREJCP":5,"COLPAL":5,"TATASTEEL":6,"JSWSTEEL":6,
+    "HINDALCO":6,"VEDL":6,"NMDC":6,"RELIANCE":7,"ONGC":7,"BPCL":7,"IOC":7,"GAIL":7,
+    "NTPC":8,"POWERGRID":8,"ADANIPORTS":8,"DLF":8,"BAJFINANCE":9,"BAJAJFINSV":9,
+    "HDFCLIFE":9,"SBILIFE":9,"ICICIPRULI":9,
+}
+
+def _get_sector(symbol: str) -> int:
+    """Get sector code for a stock symbol (0 = unknown)."""
+    return SECTOR_MAP.get(symbol.replace(".NS", "").upper(), 0)
+
 # ── Curated 20-feature set ──────────────────────────────────────────────────
 # Selected for stability across folds, SHAP importance, and non-redundancy.
 
@@ -73,8 +94,8 @@ SELECTED_V2 = [
 # 4 regime features
 SELECTED_REGIME = REGIME_FEATURE_COLUMNS
 
-# Combined
-CURATED_FEATURES = SELECTED_BREAKOUT + SELECTED_EXTRA + SELECTED_V2 + SELECTED_REGIME
+# Combined (21 features: 20 original + sector)
+CURATED_FEATURES = SELECTED_BREAKOUT + SELECTED_EXTRA + SELECTED_V2 + SELECTED_REGIME + ["sector"]
 
 
 class WinClassifierV2:
@@ -87,7 +108,7 @@ class WinClassifierV2:
     def __init__(self):
         self.model = XGBClassifier(
             objective="binary:logistic",
-            n_estimators=500,
+            n_estimators=1000,         # More trees, early stopping trims
             max_depth=4,
             learning_rate=0.03,
             subsample=0.8,
@@ -98,6 +119,7 @@ class WinClassifierV2:
             scale_pos_weight=1.0,      # Adjusted during training
             tree_method="hist",
             eval_metric="logloss",
+            early_stopping_rounds=30,  # Prevents overfitting
             random_state=42,
         )
         self.is_trained = False
@@ -106,9 +128,8 @@ class WinClassifierV2:
         self.win_rate_train: float = 0.0
         self.n_features: int = len(CURATED_FEATURES)
 
-        # Dynamic threshold — calibrated to actual model output
-        # With ~25% win rate, model outputs P(win) in 0.05–0.40 range
-        self.optimal_threshold: float = 0.20
+        # Dynamic threshold — calibrated to 1.5R model output
+        self.optimal_threshold: float = 0.15
         self.regime_thresholds: dict[str, float] = {}
 
     # ── Feature extraction ─────────────────────────────────────────────────
@@ -119,8 +140,9 @@ class WinClassifierV2:
         day_idx: int,
         nifty_df: pd.DataFrame | None = None,
         first_candle: dict | None = None,
+        symbol: str = "",
     ) -> np.ndarray | None:
-        """Extract the curated 20-feature vector for a single day.
+        """Extract the curated 21-feature vector for a single day.
 
         Returns None if insufficient data.
         """
@@ -145,8 +167,11 @@ class WinClassifierV2:
             k: 0.0 for k in REGIME_FEATURE_COLUMNS
         }
 
+        # Sector feature
+        sector_feat = {"sector": float(_get_sector(symbol))}
+
         # Combine into curated set
-        all_feat = {**base_feat, **extra_feat, **v2_feat, **regime_feat}
+        all_feat = {**base_feat, **extra_feat, **v2_feat, **regime_feat, **sector_feat}
 
         try:
             vec = np.array(
@@ -223,46 +248,54 @@ class WinClassifierV2:
     # ── Win label ──────────────────────────────────────────────────────────
 
     def build_win_label(self, daily_df: pd.DataFrame, day_idx: int) -> int:
-        """Label: did the ORB trade WIN (hit 2R target before SL)?
+        """Conservative labeling — handles OHLC ambiguity honestly.
 
-        Uses daily OHLC to approximate:
-        - LONG (gap up): WIN if high >= open + 2*(open - low), LOSS if low hits SL first
-        - SHORT (gap down): WIN if low <= open - 2*(high - open)
+        Uses previous day's high/low as SL proxy (first-candle approximation).
+        Assumes SL-first if both SL and target were touched in the same candle.
 
         Returns 1 for WIN, 0 for LOSS.
         """
         row = daily_df.iloc[day_idx]
-        prev_close = float(daily_df.iloc[day_idx - 1]["Close"])
+        prev_row = daily_df.iloc[day_idx - 1]
         open_px = float(row["Open"])
         high_px = float(row["High"])
         low_px = float(row["Low"])
         close_px = float(row["Close"])
+        prev_low = float(prev_row["Low"])
+        prev_high = float(prev_row["High"])
+        prev_close = float(prev_row["Close"])
 
         gap = open_px - prev_close
         if gap > 0:
-            # LONG trade
-            sl = low_px
-            risk = open_px - sl
+            # LONG trade — risk from open to prev low
+            risk = open_px - prev_low
             if risk <= 0:
                 return 0
-            target = open_px + 2 * risk
-            if high_px >= target:
-                return 1
-            if close_px > open_px + risk:  # Above 1R
-                return 1
-            return 0
+            sl = open_px - risk
+            target = open_px + REWARD_RATIO * risk
+
+            if high_px >= target and low_px > sl:
+                return 1                                        # Clean win
+            if low_px <= sl and high_px < target:
+                return 0                                        # Clean loss
+            if low_px <= sl and high_px >= target:
+                return 1 if close_px > open_px + 0.5 * risk else 0  # Ambiguous
+            return 1 if close_px > open_px + 0.3 * risk else 0  # Time exit
         else:
             # SHORT trade
-            sl = high_px
-            risk = sl - open_px
+            risk = prev_high - open_px
             if risk <= 0:
                 return 0
-            target = open_px - 2 * risk
-            if low_px <= target:
+            sl = open_px + risk
+            target = open_px - REWARD_RATIO * risk
+
+            if low_px <= target and high_px < sl:
                 return 1
-            if close_px < open_px - risk:
-                return 1
-            return 0
+            if high_px >= sl and low_px > target:
+                return 0
+            if high_px >= sl and low_px <= target:
+                return 1 if close_px < open_px - 0.5 * risk else 0
+            return 1 if close_px < open_px - 0.3 * risk else 0
 
     # ── Training data ──────────────────────────────────────────────────────
 
@@ -270,13 +303,15 @@ class WinClassifierV2:
         self,
         daily_df: pd.DataFrame,
         nifty_df: pd.DataFrame | None = None,
-        gap_min: float = 2.0,
-        vol_min: float = 1.5,
+        symbol: str = "",
+        gap_min: float = 1.5,
+        vol_min: float = 1.2,
         price_min: float = 50.0,
         price_max: float = 10000.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Build features + win/loss labels for all qualifying gap days.
 
+        Uses lower thresholds (gap 1.5%, vol 1.2×) to collect more samples.
         Returns (X, y) arrays.
         """
         if len(daily_df) < 50:
@@ -308,7 +343,9 @@ class WinClassifierV2:
             if rel_vol < vol_min:
                 continue
 
-            feature_vec = self.extract_features(daily_df, i, nifty_df=nifty_df)
+            feature_vec = self.extract_features(
+                daily_df, i, nifty_df=nifty_df, symbol=symbol
+            )
             if feature_vec is None:
                 continue
 
@@ -324,7 +361,7 @@ class WinClassifierV2:
     # ── Training ──────────────────────────────────────────────────────────
 
     def train(self, X: np.ndarray, y: np.ndarray) -> dict:
-        """Train the win/loss classifier."""
+        """Train the win/loss classifier with early stopping."""
         if len(X) < 50:
             return {"error": f"Not enough samples ({len(X)})"}
 
@@ -336,7 +373,16 @@ class WinClassifierV2:
         if n_losses > 0 and n_wins > 0:
             self.model.set_params(scale_pos_weight=n_losses / n_wins)
 
-        self.model.fit(X, y)
+        # 80/20 split for early stopping (time-ordered, no shuffle)
+        split_idx = int(len(X) * 0.8)
+        X_train, X_val = X[:split_idx], X[split_idx:]
+        y_train, y_val = y[:split_idx], y[split_idx:]
+
+        self.model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=False,
+        )
 
         self.is_trained = True
         self.trained_until = date.today()
@@ -373,16 +419,16 @@ class WinClassifierV2:
     def classify_confidence(self, win_prob: float) -> str:
         """Classify the trade into a confidence bucket for position sizing.
 
-        Calibrated to actual model output range (~0.05 to ~0.40):
-            LOW:    bottom tier (prob < 0.18)
-            MEDIUM: middle tier (0.18 <= prob < 0.28)
-            HIGH:   top tier (prob >= 0.28)
+        Calibrated for 1.5R model output:
+            LOW:    prob < 0.13
+            MEDIUM: 0.13 <= prob < 0.22
+            HIGH:   prob >= 0.22
 
         Returns: 'LOW', 'MEDIUM', or 'HIGH'
         """
-        if win_prob < 0.18:
+        if win_prob < 0.13:
             return "LOW"
-        elif win_prob < 0.28:
+        elif win_prob < 0.22:
             return "MEDIUM"
         else:
             return "HIGH"

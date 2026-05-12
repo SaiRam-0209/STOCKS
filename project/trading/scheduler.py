@@ -85,8 +85,8 @@ def morning_scan_job():
         executor = TradingExecutor(
             mode=mode,
             capital=capital,
-            gap_threshold=2.0,      # Lowered: AI model is the real filter
-            vol_threshold=1.5,      # Lowered: let more candidates through
+            gap_threshold=1.5,      # Lowered: AI model is the real filter
+            vol_threshold=1.2,      # Lowered: let more candidates through
             top_n=4,
             aggressive_mode=aggressive,
             alert_callback=alert_fn,
@@ -218,7 +218,7 @@ def nightly_retrain_job():
         # Collect training data from all stocks
         all_X = []
         all_y = []
-        symbols = NSE_ALL_SYMBOLS[:500]
+        symbols = NSE_ALL_SYMBOLS[:1000]  # More stocks = more training data
 
         for i, sym in enumerate(symbols):
             try:
@@ -228,7 +228,7 @@ def nightly_retrain_job():
                 if df is None or len(df) < 50:
                     continue
                 if use_v2:
-                    X, y = clf.build_training_data(df, nifty_df=nifty_df)
+                    X, y = clf.build_training_data(df, nifty_df=nifty_df, symbol=sym)
                 else:
                     X, y = clf.build_training_data(df, nifty_df=nifty_df, symbol=sym)
                 if len(X) > 0:
@@ -251,14 +251,14 @@ def nightly_retrain_job():
             log.error("Retrain failed: %s", result["error"])
             return
 
-        # Set calibrated threshold (matches model output range 0.05-0.40)
+        # Set calibrated threshold (matches 1.5R model output)
         if use_v2:
-            new_clf.optimal_threshold = 0.20
+            new_clf.optimal_threshold = 0.15
             new_clf.regime_thresholds = {
-                'TRENDING_UP': 0.18,
-                'TRENDING_DOWN': 0.22,
-                'SIDEWAYS': 0.22,
-                'HIGH_VOLATILITY': 0.25,
+                'TRENDING_UP': 0.13,
+                'TRENDING_DOWN': 0.17,
+                'SIDEWAYS': 0.15,
+                'HIGH_VOLATILITY': 0.20,
             }
 
         new_clf.save()

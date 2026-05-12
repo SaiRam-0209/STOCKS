@@ -21,9 +21,9 @@ log = logging.getLogger(__name__)
 
 # ── Confidence → Size multiplier mapping ─────────────────────────────────────
 CONFIDENCE_MULTIPLIERS = {
-    "LOW": 0.5,       # P(win) < 0.50
-    "MEDIUM": 1.0,    # 0.50 <= P(win) < 0.65
-    "HIGH": 1.5,      # P(win) >= 0.65
+    "LOW": 0.5,       # P(win) < 0.13
+    "MEDIUM": 1.0,    # 0.13 <= P(win) < 0.22
+    "HIGH": 1.5,      # P(win) >= 0.22
 }
 
 AGGRESSIVE_CONFIDENCE_MULTIPLIERS = {

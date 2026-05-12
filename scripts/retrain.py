@@ -10,6 +10,8 @@ Exit codes: 0 = success, 1 = failure
 import sys
 import os
 import argparse
+import subprocess
+import logging
 from datetime import datetime
 
 # Ensure project package is importable when run from repo root
@@ -17,6 +19,36 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from project.data.symbols_fetcher import get_all_nse_stocks
 from project.ml.predictor import train_model, update_model
+
+logger = logging.getLogger(__name__)
+
+
+def _git_commit_model(model_path: str = "models/win_classifier_v2.joblib"):
+    """Commit retrained WinClassifierV2 back to git.
+
+    Prevents GCP redeploy from reverting to the smaller git-committed model.
+    Non-fatal: if git fails, training still succeeds.
+    """
+    try:
+        subprocess.run(["git", "config", "user.email", "bot@stockbot.local"], check=True)
+        subprocess.run(["git", "config", "user.name", "StockBot Retrain"], check=True)
+        subprocess.run(["git", "add", model_path], check=True)
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            capture_output=True,
+        )
+        if result.returncode != 0:  # there are staged changes
+            subprocess.run(
+                ["git", "commit", "-m",
+                 f"chore: retrain WinClassifierV2 {datetime.now().strftime('%Y-%m-%d')}"],
+                check=True,
+            )
+            subprocess.run(["git", "push"], check=True)
+            print("  Retrained model committed and pushed to git ✅")
+        else:
+            print("  No model changes to commit")
+    except subprocess.CalledProcessError as e:
+        print(f"  Git commit skipped (non-fatal): {e}")
 
 
 def main():
@@ -74,6 +106,9 @@ def main():
         print(f"  {k}: {v}")
     print(f"  trained_until: {model.trained_until}")
     print(f"{'='*60}\n")
+
+    # Persist WinClassifierV2 to git (prevents model loss on redeploy)
+    _git_commit_model()
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ DEFAULT_GAP_THRESHOLD = 2.0
 DEFAULT_VOL_THRESHOLD = 1.5
 DEFAULT_TOP_N = 4
 SLIPPAGE_PCT = 0.001
+REWARD_RATIO = 1.5
 TRAILING_SL_ENABLED = True
 MIN_STOCK_PRICE = 50.0
 MAX_STOCK_PRICE = 10000.0
@@ -300,12 +301,12 @@ class TradingExecutorV2:
             entry = candle_high
             stoploss = candle_low
             risk = entry - stoploss
-            target = entry + 2 * risk
+            target = entry + REWARD_RATIO * risk
         else:
             entry = candle_low
             stoploss = candle_high
             risk = stoploss - entry
-            target = entry - 2 * risk
+            target = entry - REWARD_RATIO * risk
 
         if risk <= 0 or candle_range <= 0:
             return None
@@ -322,7 +323,7 @@ class TradingExecutorV2:
     def _rank_and_select(self, candidates: list[ScanResult]) -> list[ScanResult]:
         ai_filtered = False
         try:
-            from project.ml.win_classifier_v2 import WinClassifierV2, CURATED_FEATURES
+            from project.ml.win_classifier_v2 import WinClassifierV2, CURATED_FEATURES, _get_sector
 
             clf = WinClassifierV2()
             if clf.load():
@@ -331,6 +332,7 @@ class TradingExecutorV2:
                 )
 
                 scored = []
+                sector_count = {}  # Max 2 stocks per sector
                 for c in candidates:
                     try:
                         yf_ticker = c.ticker if c.ticker.endswith(".NS") else f"{c.ticker}.NS"
@@ -339,7 +341,8 @@ class TradingExecutorV2:
                             continue
 
                         feat_vec = clf.extract_features(
-                            daily, len(daily) - 1, nifty_df=self._nifty_df
+                            daily, len(daily) - 1, nifty_df=self._nifty_df,
+                            symbol=c.ticker,
                         )
                         if feat_vec is None:
                             continue
@@ -373,6 +376,16 @@ class TradingExecutorV2:
                             )
 
                         if take:
+                            # Sector concentration guard
+                            sector = _get_sector(c.ticker)
+                            if sector > 0 and sector_count.get(sector, 0) >= 2:
+                                self.daily_log.log_event(
+                                    f"  ⚠️ {c.ticker} SKIPPED: sector {sector} full"
+                                )
+                                continue
+                            if sector > 0:
+                                sector_count[sector] = sector_count.get(sector, 0) + 1
+
                             scored.append(c)
                             self.daily_log.log_event(
                                 f"  ✅ {c.ticker} P(win)={prob:.0%} "
