@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ticket Assigned</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f5f5; color: #333; }
+    .wrapper { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #3949ab 0%, #7b1fa2 100%); padding: 40px 32px; text-align: center; }
+    .header h1 { color: #fff; font-size: 24px; font-weight: 700; margin-top: 12px; }
+    .header p { color: rgba(255,255,255,0.85); font-size: 14px; margin-top: 6px; }
+    .icon-circle { width: 64px; height: 64px; background: rgba(255,255,255,0.2); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+    .icon-circle span { font-size: 32px; }
+    .body { padding: 32px; }
+    .greeting { font-size: 16px; color: #424242; margin-bottom: 16px; }
+    .info-box { background: #f3e5f5; border-left: 4px solid #7b1fa2; border-radius: 8px; padding: 20px 24px; margin: 24px 0; }
+    .info-box h3 { color: #7b1fa2; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e8d5f0; font-size: 14px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .label { color: #757575; }
+    .info-row .value { color: #212121; font-weight: 600; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge-high { background: #ffebee; color: #c62828; }
+    .badge-critical { background: #fce4ec; color: #880e4f; }
+    .badge-medium { background: #fff8e1; color: #f57f17; }
+    .badge-low { background: #e8f5e9; color: #2e7d32; }
+    .message { font-size: 14px; color: #616161; line-height: 1.7; margin: 16px 0; }
+    .btn { display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #3949ab, #7b1fa2); color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; margin: 20px 0; }
+    .footer { background: #fafafa; border-top: 1px solid #eee; padding: 24px 32px; text-align: center; }
+    .footer p { font-size: 12px; color: #9e9e9e; line-height: 1.6; }
+    .footer a { color: #7b1fa2; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="icon-circle"><span>🎫</span></div>
+      <h1>Ticket Assigned to You</h1>
+      <p>A support ticket has been assigned to your queue</p>
+    </div>
+    <div class="body">
+      <p class="greeting">Hello <strong th:text="${adminName}">Admin</strong>,</p>
+      <p class="message">
+        A ticket has been assigned to you and requires your attention. Please review the details below and take appropriate action.
+      </p>
+      <div class="info-box">
+        <h3>Ticket Details</h3>
+        <div class="info-row">
+          <span class="label">Ticket Number</span>
+          <span class="value" th:text="${ticketNumber}">TKT-20240101-0001</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Subject</span>
+          <span class="value" th:text="${subject}">Ticket subject</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Submitted By</span>
+          <span class="value" th:text="${userName}">User Name</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Category</span>
+          <span class="value" th:text="${category}">TECHNICAL</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Priority</span>
+          <span class="value">
+            <span class="badge" th:classappend="${priority == 'HIGH' ? 'badge-high' : (priority == 'CRITICAL' ? 'badge-critical' : (priority == 'MEDIUM' ? 'badge-medium' : 'badge-low'))}" th:text="${priority}">HIGH</span>
+          </span>
+        </div>
+        <div class="info-row">
+          <span class="label">Created At</span>
+          <span class="value" th:text="${createdAt}">Jan 1, 2024</span>
+        </div>
+      </div>
+      <p class="message" th:if="${description}">
+        <strong>Description:</strong><br>
+        <span th:text="${description}">Ticket description...</span>
+      </p>
+      <div style="text-align:center;">
+        <a th:href="${ticketUrl}" class="btn">View &amp; Respond to Ticket</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>This is an automated notification from the Support Portal.<br>
+        Please do not reply to this email. <a th:href="${portalUrl}">Visit the portal</a> to manage tickets.</p>
+    </div>
+  </div>
+</body>
+</html>

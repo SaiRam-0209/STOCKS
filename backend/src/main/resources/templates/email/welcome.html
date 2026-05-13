@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Welcome to AI Support Portal</title>
+<style>
+  body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; }
+  .wrapper { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+  .header { background: linear-gradient(135deg, #3f51b5 0%, #1a237e 100%); padding: 40px 30px; text-align: center; }
+  .header h1 { color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; }
+  .header p { color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px; }
+  .logo { width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
+  .content { padding: 40px 30px; }
+  .greeting { font-size: 22px; font-weight: 600; color: #1a237e; margin-bottom: 16px; }
+  p { color: #555; line-height: 1.7; margin: 0 0 16px; }
+  .feature-list { background: #f8f9ff; border-left: 4px solid #3f51b5; padding: 20px; border-radius: 8px; margin: 24px 0; }
+  .feature-list ul { margin: 0; padding-left: 20px; }
+  .feature-list li { color: #333; margin-bottom: 8px; line-height: 1.6; }
+  .btn { display: inline-block; background: linear-gradient(135deg, #3f51b5, #1a237e); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 24px 0; }
+  .footer { background: #f8f9fa; padding: 24px 30px; text-align: center; border-top: 1px solid #e9ecef; }
+  .footer p { color: #999; font-size: 12px; margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <div style="font-size:40px; margin-bottom:16px;">🎫</div>
+    <h1>AI Support Portal</h1>
+    <p>Your intelligent support management system</p>
+  </div>
+  <div class="content">
+    <div class="greeting">Welcome, <span th:text="${userName}">User</span>! 👋</div>
+    <p>We're thrilled to have you on board. Your account has been created successfully and you're ready to get started.</p>
+    <div class="feature-list">
+      <strong style="color:#3f51b5; display:block; margin-bottom:12px;">What you can do with AI Support Portal:</strong>
+      <ul>
+        <li>🎫 Create and track support tickets instantly</li>
+        <li>🤖 Get AI-powered suggestions and resolutions</li>
+        <li>💬 Chat with support agents in real-time</li>
+        <li>📊 View your ticket history and analytics</li>
+        <li>🔔 Receive real-time notifications on updates</li>
+        <li>📎 Attach files and documents to your tickets</li>
+      </ul>
+    </div>
+    <p>Your registered email: <strong th:text="${userEmail}">user@example.com</strong></p>
+    <div style="text-align: center;">
+      <a th:href="${loginUrl}" class="btn">Get Started →</a>
+    </div>
+    <p style="font-size:13px; color:#999; margin-top:24px;">If you did not create this account, please contact our support team immediately.</p>
+  </div>
+  <div class="footer">
+    <p>© 2024 AI Support Portal. All rights reserved.</p>
+    <p style="margin-top:8px;">This email was sent automatically. Please do not reply.</p>
+  </div>
+</div>
+</body>
+</html>

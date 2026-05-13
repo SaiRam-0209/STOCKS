@@ -1,0 +1,52 @@
+<nav class="sidebar" [class.open]="isOpen">
+  <!-- Logo -->
+  <div class="sidebar__logo">
+    <div class="sidebar__logo-icon">🎫</div>
+    <div>
+      <div class="sidebar__logo-text">SupportAI</div>
+      <div class="sidebar__logo-sub">{{ isAdmin ? 'Admin Panel' : 'User Portal' }}</div>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <div class="sidebar__nav">
+    <div class="sidebar__section-title">Main Menu</div>
+
+    <a *ngFor="let item of navItems"
+       [routerLink]="item.route"
+       routerLinkActive="active"
+       class="sidebar__item">
+      <mat-icon>{{ item.icon }}</mat-icon>
+      <span>{{ item.label }}</span>
+      <span class="badge-count" *ngIf="item.label === 'AI Responses' && pendingAiCount > 0">
+        {{ pendingAiCount }}
+      </span>
+    </a>
+  </div>
+
+  <!-- User Info + Logout -->
+  <div class="sidebar__footer">
+    <div style="display:flex; align-items:center; gap:12px; padding:8px 12px; margin-bottom:8px;">
+      <div style="width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.2);
+                  display:flex; align-items:center; justify-content:center; font-weight:700;
+                  font-size:14px; color:white; flex-shrink:0;">
+        {{ userInitials }}
+      </div>
+      <div style="overflow:hidden; flex:1;">
+        <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          {{ userName }}
+        </div>
+        <div style="font-size:11px; opacity:0.65; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          {{ userEmail }}
+        </div>
+      </div>
+    </div>
+
+    <button mat-button (click)="logout()"
+            style="width:100%; justify-content:flex-start; color:rgba(255,255,255,0.75);
+                   padding:10px 14px; border-radius:8px; gap:10px;">
+      <mat-icon style="font-size:20px; width:20px; height:20px;">logout</mat-icon>
+      Sign Out
+    </button>
+  </div>
+</nav>

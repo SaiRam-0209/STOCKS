@@ -1,0 +1,143 @@
+<div class="fade-in">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <div class="page-header__title">My Tickets</div>
+      <div class="page-header__subtitle">{{ totalElements }} ticket{{ totalElements !== 1 ? 's' : '' }} total</div>
+    </div>
+    <button mat-raised-button color="primary" (click)="createTicket()" style="border-radius:8px; font-weight:600;">
+      <mat-icon>add</mat-icon> New Ticket
+    </button>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-bar">
+    <mat-form-field appearance="outline" style="min-width:220px; flex:1;">
+      <mat-label>Search tickets</mat-label>
+      <input matInput [formControl]="searchCtrl" placeholder="Ticket number or subject...">
+      <mat-icon matSuffix>search</mat-icon>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" style="width:140px;">
+      <mat-label>Status</mat-label>
+      <mat-select (selectionChange)="applyFilter('status', $event.value)">
+        <mat-option [value]="null">All Statuses</mat-option>
+        <mat-option *ngFor="let s of statuses" [value]="s.value">{{ s.label }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" style="width:140px;">
+      <mat-label>Priority</mat-label>
+      <mat-select (selectionChange)="applyFilter('priority', $event.value)">
+        <mat-option [value]="null">All Priorities</mat-option>
+        <mat-option *ngFor="let p of priorities" [value]="p.value">{{ p.label }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" style="width:160px;">
+      <mat-label>Category</mat-label>
+      <mat-select (selectionChange)="applyFilter('category', $event.value)">
+        <mat-option [value]="null">All Categories</mat-option>
+        <mat-option *ngFor="let c of categories" [value]="c.value">{{ c.label }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <button mat-stroked-button (click)="clearFilters()" matTooltip="Clear all filters">
+      <mat-icon>clear</mat-icon> Clear
+    </button>
+  </div>
+
+  <!-- Table -->
+  <div class="card">
+    <div *ngIf="loading" class="loading-container">
+      <mat-spinner diameter="40"></mat-spinner>
+    </div>
+
+    <div *ngIf="!loading && tickets.length === 0" class="empty-state">
+      <div class="empty-state__icon">🎫</div>
+      <div class="empty-state__title">No tickets found</div>
+      <div class="empty-state__subtitle">Try adjusting your search or create a new ticket</div>
+      <button mat-raised-button color="primary" (click)="createTicket()" style="margin-top:16px; border-radius:8px;">
+        <mat-icon>add</mat-icon> Create Ticket
+      </button>
+    </div>
+
+    <table *ngIf="!loading && tickets.length > 0" mat-table [dataSource]="tickets" class="w-full">
+      <ng-container matColumnDef="ticketNumber">
+        <th mat-header-cell *matHeaderCellDef>Ticket #</th>
+        <td mat-cell *matCellDef="let t">
+          <span style="font-weight:600; color:#3949ab; font-size:13px;">{{ t.ticketNumber }}</span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="subject">
+        <th mat-header-cell *matHeaderCellDef>Subject</th>
+        <td mat-cell *matCellDef="let t">
+          <div style="font-weight:500; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            {{ t.subject }}
+          </div>
+          <div style="font-size:11px; color:#9e9e9e; margin-top:2px;">{{ t.category | titlecase }}</div>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="priority">
+        <th mat-header-cell *matHeaderCellDef>Priority</th>
+        <td mat-cell *matCellDef="let t">
+          <span [class]="getPriorityClass(t.priority)">{{ t.priority | titlecase }}</span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Status</th>
+        <td mat-cell *matCellDef="let t">
+          <span [class]="getStatusClass(t.status)">{{ t.status | titlecase }}</span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="messages">
+        <th mat-header-cell *matHeaderCellDef>Messages</th>
+        <td mat-cell *matCellDef="let t">
+          <span *ngIf="t.messageCount > 0" style="display:flex; align-items:center; gap:4px; font-size:13px; color:#616161;">
+            <mat-icon style="font-size:16px; width:16px; height:16px;">chat</mat-icon>
+            {{ t.messageCount }}
+          </span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="createdAt">
+        <th mat-header-cell *matHeaderCellDef>Created</th>
+        <td mat-cell *matCellDef="let t" style="font-size:13px; color:#616161;">
+          {{ formatDate(t.createdAt) }}
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let t">
+          <button mat-icon-button (click)="viewTicket(t.id)" matTooltip="View Details">
+            <mat-icon>open_in_new</mat-icon>
+          </button>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="['ticketNumber','subject','priority','status','messages','createdAt','actions']"></tr>
+      <tr mat-row *matRowDef="let row; columns: ['ticketNumber','subject','priority','status','messages','createdAt','actions'];"
+          (click)="viewTicket(row.id)" style="cursor:pointer;"></tr>
+    </table>
+
+    <!-- Pagination -->
+    <div *ngIf="totalPages > 1" style="display:flex; justify-content:center; align-items:center; gap:8px; padding:16px;">
+      <button mat-icon-button [disabled]="filters.page === 0" (click)="changePage(filters.page - 1)">
+        <mat-icon>chevron_left</mat-icon>
+      </button>
+      <button *ngFor="let p of pages" mat-mini-fab
+              [color]="p === filters.page ? 'primary' : ''"
+              (click)="changePage(p)"
+              style="width:36px; height:36px; font-size:13px;">
+        {{ p + 1 }}
+      </button>
+      <button mat-icon-button [disabled]="filters.page >= totalPages - 1" (click)="changePage(filters.page + 1)">
+        <mat-icon>chevron_right</mat-icon>
+      </button>
+    </div>
+  </div>
+</div>

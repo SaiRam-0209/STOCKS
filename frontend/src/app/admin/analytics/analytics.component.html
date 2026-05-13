@@ -1,0 +1,112 @@
+<div class="fade-in">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <div class="page-header__title">Analytics & Reports</div>
+      <div class="page-header__subtitle">Comprehensive insights and metrics</div>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button mat-stroked-button (click)="exportCSV()" [disabled]="exportingCSV" style="border-radius:8px; font-weight:600;">
+        <mat-icon>table_chart</mat-icon>
+        {{ exportingCSV ? 'Exporting...' : 'Export CSV' }}
+      </button>
+      <button mat-raised-button color="primary" (click)="exportPDF()" [disabled]="exportingPDF" style="border-radius:8px; font-weight:600;">
+        <mat-icon>picture_as_pdf</mat-icon>
+        {{ exportingPDF ? 'Exporting...' : 'Export PDF' }}
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-container" style="min-height:400px;"><mat-spinner diameter="50"></mat-spinner></div>
+
+  <div *ngIf="!loading && analytics">
+    <!-- Summary Stats -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:24px;">
+      <div class="mini-stat" style="border-left: 3px solid #3949ab;">
+        <div class="mini-stat__val">{{ analytics.totalTickets }}</div>
+        <div class="mini-stat__label">Total Tickets</div>
+      </div>
+      <div class="mini-stat" style="border-left: 3px solid #2e7d32;">
+        <div class="mini-stat__val">{{ analytics.resolutionRate | number:'1.0-1' }}%</div>
+        <div class="mini-stat__label">Resolution Rate</div>
+      </div>
+      <div class="mini-stat" style="border-left: 3px solid #7b1fa2;">
+        <div class="mini-stat__val">{{ analytics.aiApprovalRate | number:'1.0-1' }}%</div>
+        <div class="mini-stat__label">AI Approval Rate</div>
+      </div>
+      <div class="mini-stat" style="border-left: 3px solid #0277bd;">
+        <div class="mini-stat__val">
+          {{ analytics.averageResolutionTimeHours ? (analytics.averageResolutionTimeHours | number:'1.0-1') + 'h' : 'N/A' }}
+        </div>
+        <div class="mini-stat__label">Avg Resolution</div>
+      </div>
+      <div class="mini-stat" style="border-left: 3px solid #e65100;">
+        <div class="mini-stat__val">{{ analytics.newTicketsToday }}</div>
+        <div class="mini-stat__label">New Today</div>
+      </div>
+      <div class="mini-stat" style="border-left: 3px solid #f57f17;">
+        <div class="mini-stat__val">{{ analytics.newTicketsThisWeek }}</div>
+        <div class="mini-stat__label">This Week</div>
+      </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
+      <div class="card">
+        <div class="card__header"><div style="font-weight:600;">Tickets by Status</div></div>
+        <div class="card__content" style="display:flex; justify-content:center;">
+          <canvas baseChart [data]="statusChartData" [type]="'doughnut'" [options]="doughnutOptions" style="max-height:280px;"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__header"><div style="font-weight:600;">Tickets by Priority</div></div>
+        <div class="card__content">
+          <canvas baseChart [data]="priorityChartData" [type]="'bar'" [options]="barOptions" style="max-height:280px;"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
+      <div class="card">
+        <div class="card__header">
+          <div style="font-weight:600;">Ticket Trend (Last 30 Days)</div>
+        </div>
+        <div class="card__content">
+          <canvas baseChart [data]="trendChartData" [type]="'line'" [options]="lineOptions" style="max-height:240px;"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__header"><div style="font-weight:600;">By Category</div></div>
+        <div class="card__content" style="display:flex; justify-content:center;">
+          <canvas baseChart [data]="categoryChartData" [type]="'polarArea'" style="max-height:240px;"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Stats -->
+    <div class="card">
+      <div class="card__header">
+        <div style="font-weight:600; display:flex; align-items:center; gap:8px;">
+          <mat-icon style="color:#7b1fa2;">smart_toy</mat-icon>
+          AI Performance Metrics
+        </div>
+      </div>
+      <div class="card__content">
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:20px;">
+          <div class="ai-metric">
+            <div class="ai-metric__val" style="color:#f57f17;">{{ analytics.pendingAIResponses }}</div>
+            <div class="ai-metric__label">Pending Review</div>
+          </div>
+          <div class="ai-metric">
+            <div class="ai-metric__val" style="color:#2e7d32;">{{ analytics.approvedAIResponses }}</div>
+            <div class="ai-metric__label">Approved</div>
+          </div>
+          <div class="ai-metric">
+            <div class="ai-metric__val" style="color:#c62828;">{{ analytics.rejectedAIResponses }}</div>
+            <div class="ai-metric__label">Rejected</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

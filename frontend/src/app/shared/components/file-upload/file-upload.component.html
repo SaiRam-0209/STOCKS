@@ -1,0 +1,36 @@
+<div class="file-upload">
+  <div class="dropzone"
+       [class.drag-over]="dragOver"
+       (dragover)="onDragOver($event)"
+       (dragleave)="onDragLeave()"
+       (drop)="onDrop($event)"
+       (click)="fileInput.click()">
+    <input #fileInput type="file" [multiple]="multiple" (change)="onFileInput($event)"
+           accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.zip,.xlsx,.csv" hidden>
+    <div class="dropzone__content">
+      <mat-icon class="dropzone__icon">cloud_upload</mat-icon>
+      <div class="dropzone__title">Drop files here or click to browse</div>
+      <div class="dropzone__subtitle">
+        Max {{ maxFiles }} files, 10MB each • PDF, Word, Excel, Images, ZIP
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="error" class="upload-error">
+    <mat-icon style="font-size:16px; width:16px; height:16px; vertical-align:middle;">error</mat-icon>
+    {{ error }}
+  </div>
+
+  <div *ngIf="selectedFiles.length > 0" class="file-list">
+    <div *ngFor="let file of selectedFiles; let i = index" class="file-item">
+      <span class="file-icon">{{ getFileIcon(file) }}</span>
+      <div class="file-info">
+        <div class="file-name">{{ file.name }}</div>
+        <div class="file-size">{{ formatSize(file.size) }}</div>
+      </div>
+      <button mat-icon-button (click)="removeFile(i)" color="warn" matTooltip="Remove">
+        <mat-icon style="font-size:18px; width:18px; height:18px;">close</mat-icon>
+      </button>
+    </div>
+  </div>
+</div>

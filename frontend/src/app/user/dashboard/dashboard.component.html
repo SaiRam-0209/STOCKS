@@ -1,0 +1,113 @@
+<div class="fade-in">
+  <!-- Welcome Banner -->
+  <div class="welcome-banner">
+    <div class="welcome-banner__content">
+      <div class="welcome-banner__greeting">{{ greeting }}, <span>{{ user?.name?.split(' ')[0] || 'User' }}! 👋</span></div>
+      <div class="welcome-banner__subtitle">Manage your support tickets and track resolutions</div>
+      <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
+        <button mat-raised-button (click)="createTicket()"
+                style="background:white; color:#3949ab; font-weight:600; border-radius:8px; padding:0 20px; height:40px;">
+          <mat-icon style="margin-right:6px;">add</mat-icon>
+          New Ticket
+        </button>
+        <button mat-stroked-button (click)="viewTickets()"
+                style="color:white; border-color:rgba(255,255,255,0.5); border-radius:8px; padding:0 20px; height:40px;">
+          <mat-icon style="margin-right:6px;">list</mat-icon>
+          View All Tickets
+        </button>
+      </div>
+    </div>
+    <div class="welcome-banner__visual">🎫</div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card" style="border-top: 3px solid #3949ab;">
+      <div class="stat-card__icon" style="background:#e8eaf6;">
+        <mat-icon style="color:#3949ab;">confirmation_number</mat-icon>
+      </div>
+      <div class="stat-card__value" style="color:#3949ab;">{{ stats.total }}</div>
+      <div class="stat-card__label">Total Tickets</div>
+    </div>
+    <div class="stat-card" style="border-top: 3px solid #0277bd;">
+      <div class="stat-card__icon" style="background:#e1f5fe;">
+        <mat-icon style="color:#0277bd;">radio_button_unchecked</mat-icon>
+      </div>
+      <div class="stat-card__value" style="color:#0277bd;">{{ stats.open }}</div>
+      <div class="stat-card__label">Open Tickets</div>
+    </div>
+    <div class="stat-card" style="border-top: 3px solid #f57f17;">
+      <div class="stat-card__icon" style="background:#fff8e1;">
+        <mat-icon style="color:#f57f17;">autorenew</mat-icon>
+      </div>
+      <div class="stat-card__value" style="color:#f57f17;">{{ stats.inProgress }}</div>
+      <div class="stat-card__label">In Progress</div>
+    </div>
+    <div class="stat-card" style="border-top: 3px solid #2e7d32;">
+      <div class="stat-card__icon" style="background:#e8f5e9;">
+        <mat-icon style="color:#2e7d32;">check_circle</mat-icon>
+      </div>
+      <div class="stat-card__value" style="color:#2e7d32;">{{ stats.resolved }}</div>
+      <div class="stat-card__label">Resolved</div>
+    </div>
+  </div>
+
+  <!-- Recent Tickets -->
+  <div class="card">
+    <div class="card__header">
+      <div>
+        <div style="font-size:17px; font-weight:600;">Recent Tickets</div>
+        <div style="font-size:13px; color:#9e9e9e; margin-top:2px;">Your latest support requests</div>
+      </div>
+      <button mat-stroked-button color="primary" (click)="viewTickets()">View All</button>
+    </div>
+
+    <div *ngIf="loading" class="loading-container">
+      <mat-spinner diameter="40"></mat-spinner>
+    </div>
+
+    <div *ngIf="!loading && recentTickets.length === 0" class="empty-state" style="padding:40px;">
+      <div class="empty-state__icon">🎫</div>
+      <div class="empty-state__title">No tickets yet</div>
+      <div class="empty-state__subtitle">Create your first support ticket to get started</div>
+      <button mat-raised-button color="primary" (click)="createTicket()" style="margin-top:16px; border-radius:8px;">
+        <mat-icon>add</mat-icon> Create Ticket
+      </button>
+    </div>
+
+    <div *ngIf="!loading && recentTickets.length > 0">
+      <div *ngFor="let ticket of recentTickets" class="ticket-row" (click)="viewTicket(ticket.id)">
+        <div class="ticket-row__left">
+          <div class="ticket-row__number">{{ ticket.ticketNumber }}</div>
+          <div class="ticket-row__subject">{{ ticket.subject }}</div>
+          <div class="ticket-row__meta">
+            <span [class]="getStatusClass(ticket.status)">{{ ticket.status | titlecase }}</span>
+            <span [class]="getPriorityClass(ticket.priority)">{{ ticket.priority | titlecase }}</span>
+            <span style="color:#9e9e9e; font-size:12px;">{{ formatDate(ticket.createdAt) }}</span>
+          </div>
+        </div>
+        <div class="ticket-row__right">
+          <div *ngIf="ticket.aiSummary" class="ai-badge">
+            <mat-icon style="font-size:14px; width:14px; height:14px; vertical-align:middle; margin-right:4px;">smart_toy</mat-icon>
+            AI Summary
+          </div>
+          <mat-icon style="color:#9e9e9e;">chevron_right</mat-icon>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Tips -->
+  <div style="margin-top:24px; padding:20px; background:linear-gradient(135deg,#e8eaf6,#f3e5f5);
+              border-radius:12px; border-left:4px solid #3949ab;">
+    <div style="font-size:14px; font-weight:600; color:#3949ab; margin-bottom:8px;">
+      💡 Tips for faster resolution
+    </div>
+    <ul style="margin:0; padding-left:20px; font-size:13px; color:#616161; line-height:1.8;">
+      <li>Provide a clear, descriptive subject for your ticket</li>
+      <li>Include detailed steps to reproduce any issues</li>
+      <li>Attach screenshots or files when relevant</li>
+      <li>Set the correct category and priority level</li>
+    </ul>
+  </div>
+</div>

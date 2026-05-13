@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<title>Ticket Status Updated</title>
+<style>
+  body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; }
+  .wrapper { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+  .header { background: linear-gradient(135deg, #ff6f00, #e65100); padding: 36px 30px; text-align: center; }
+  .header h1 { color: #fff; margin: 0; font-size: 24px; }
+  .content { padding: 36px 30px; }
+  .status-change { display: flex; align-items: center; justify-content: center; gap: 20px; background: #fff8f0; border-radius: 12px; padding: 24px; margin: 24px 0; }
+  .status-box { text-align: center; padding: 12px 20px; border-radius: 8px; }
+  .old-status { background: #f5f5f5; color: #666; }
+  .new-status { background: #e8f5e9; color: #2e7d32; font-weight: 700; }
+  .arrow { font-size: 24px; color: #ff6f00; }
+  .ticket-info { background: #f8f9ff; border-left: 4px solid #ff6f00; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+  .btn { display: block; width: fit-content; margin: 24px auto; background: linear-gradient(135deg, #ff6f00, #e65100); color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; }
+  .footer { background: #f8f9fa; padding: 20px 30px; text-align: center; border-top: 1px solid #e9ecef; }
+  .footer p { color: #999; font-size: 12px; margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <div style="font-size:36px; margin-bottom:12px;">🔄</div>
+    <h1>Ticket Status Updated</h1>
+  </div>
+  <div class="content">
+    <p>Dear <strong th:text="${userName}">User</strong>,</p>
+    <p>The status of your support ticket has been updated.</p>
+    <div class="ticket-info">
+      <strong th:text="${ticketNumber}">TKT-000</strong> — <span th:text="${subject}">Subject</span>
+    </div>
+    <div class="status-change">
+      <div class="status-box old-status">
+        <div style="font-size:11px; color:#999; margin-bottom:4px;">Previous</div>
+        <div th:text="${oldStatus}">OPEN</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="status-box new-status">
+        <div style="font-size:11px; color:#666; margin-bottom:4px;">Current</div>
+        <div th:text="${newStatus}">IN_PROGRESS</div>
+      </div>
+    </div>
+    <a th:href="${ticketUrl}" class="btn">View Ticket →</a>
+  </div>
+  <div class="footer">
+    <p>© 2024 AI Support Portal. All rights reserved.</p>
+  </div>
+</div>
+</body>
+</html>

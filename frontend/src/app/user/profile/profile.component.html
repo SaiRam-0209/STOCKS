@@ -1,0 +1,140 @@
+<div class="fade-in">
+  <div class="page-header__title" style="margin-bottom:24px;">My Profile</div>
+
+  <div style="display:grid; grid-template-columns:280px 1fr; gap:24px; align-items:start;" *ngIf="!loading">
+
+    <!-- Profile Card -->
+    <div class="card">
+      <div class="card__content" style="text-align:center; padding:32px 20px;">
+        <div class="avatar">{{ getUserInitials() }}</div>
+        <div style="font-size:20px; font-weight:700; margin:12px 0 4px;">{{ user?.name }}</div>
+        <div style="font-size:13px; color:#9e9e9e; margin-bottom:4px;">{{ user?.email }}</div>
+        <div style="font-size:12px; margin:4px 0;">
+          <span class="badge" style="background:#e8eaf6; color:#3949ab;">{{ user?.role }}</span>
+        </div>
+        <mat-divider style="margin:16px 0;"></mat-divider>
+        <div class="profile-stat">
+          <div class="profile-stat__value">{{ user?.totalTickets }}</div>
+          <div class="profile-stat__label">Total Tickets</div>
+        </div>
+        <div class="profile-stat" style="margin-top:12px;">
+          <div class="profile-stat__value" style="color:#0277bd;">{{ user?.openTickets }}</div>
+          <div class="profile-stat__label">Open</div>
+        </div>
+        <div class="profile-stat" style="margin-top:12px;">
+          <div class="profile-stat__value" style="color:#2e7d32;">{{ user?.resolvedTickets }}</div>
+          <div class="profile-stat__label">Resolved</div>
+        </div>
+        <mat-divider style="margin:16px 0;"></mat-divider>
+        <div style="font-size:11px; color:#9e9e9e;">
+          Member since {{ formatDate(user?.createdAt || '') }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Forms -->
+    <div style="display:flex; flex-direction:column; gap:20px;">
+
+      <!-- Update Profile -->
+      <div class="card">
+        <div class="card__header">
+          <div style="font-weight:600; font-size:16px;">Update Profile</div>
+        </div>
+        <div class="card__content">
+          <form [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+            <div class="form-row" style="margin-bottom:12px;">
+              <mat-form-field appearance="outline">
+                <mat-label>Full Name *</mat-label>
+                <input matInput formControlName="name">
+                <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">person</mat-icon>
+                <mat-error>{{ getProfileError('name') }}</mat-error>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Email</mat-label>
+                <input matInput [value]="user?.email" readonly>
+                <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">email</mat-icon>
+                <mat-hint>Email cannot be changed</mat-hint>
+              </mat-form-field>
+            </div>
+
+            <div class="form-row" style="margin-bottom:20px;">
+              <mat-form-field appearance="outline">
+                <mat-label>Phone Number</mat-label>
+                <input matInput formControlName="phone" placeholder="+1234567890">
+                <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">phone</mat-icon>
+                <mat-error>{{ getProfileError('phone') }}</mat-error>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Department</mat-label>
+                <input matInput formControlName="department">
+                <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">business</mat-icon>
+                <mat-error>{{ getProfileError('department') }}</mat-error>
+              </mat-form-field>
+            </div>
+
+            <div class="form-actions">
+              <button mat-raised-button color="primary" type="submit" [disabled]="savingProfile" style="border-radius:8px; font-weight:600;">
+                <mat-spinner *ngIf="savingProfile" diameter="20" style="display:inline-block; margin-right:8px;"></mat-spinner>
+                {{ savingProfile ? 'Saving...' : 'Save Changes' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Change Password -->
+      <div class="card">
+        <div class="card__header">
+          <div style="font-weight:600; font-size:16px;">Change Password</div>
+        </div>
+        <div class="card__content">
+          <form [formGroup]="passwordForm" (ngSubmit)="changePassword()">
+            <mat-form-field appearance="outline" class="full-width" style="margin-bottom:12px;">
+              <mat-label>Current Password</mat-label>
+              <input matInput [type]="hideCurrentPass ? 'password' : 'text'" formControlName="currentPassword">
+              <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">lock</mat-icon>
+              <button mat-icon-button matSuffix type="button" (click)="hideCurrentPass = !hideCurrentPass">
+                <mat-icon>{{ hideCurrentPass ? 'visibility_off' : 'visibility' }}</mat-icon>
+              </button>
+              <mat-error>{{ getPasswordError('currentPassword') }}</mat-error>
+            </mat-form-field>
+
+            <div class="form-row" style="margin-bottom:20px;">
+              <mat-form-field appearance="outline">
+                <mat-label>New Password</mat-label>
+                <input matInput [type]="hideNewPass ? 'password' : 'text'" formControlName="newPassword">
+                <button mat-icon-button matSuffix type="button" (click)="hideNewPass = !hideNewPass">
+                  <mat-icon>{{ hideNewPass ? 'visibility_off' : 'visibility' }}</mat-icon>
+                </button>
+                <mat-error>{{ getPasswordError('newPassword') }}</mat-error>
+                <mat-hint>Min 8 chars, uppercase, lowercase, number, special</mat-hint>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Confirm New Password</mat-label>
+                <input matInput [type]="hideConfirm ? 'password' : 'text'" formControlName="confirmPassword">
+                <button mat-icon-button matSuffix type="button" (click)="hideConfirm = !hideConfirm">
+                  <mat-icon>{{ hideConfirm ? 'visibility_off' : 'visibility' }}</mat-icon>
+                </button>
+                <mat-error>{{ getPasswordError('confirmPassword') }}</mat-error>
+              </mat-form-field>
+            </div>
+
+            <div class="form-actions">
+              <button mat-raised-button color="warn" type="submit" [disabled]="changingPassword" style="border-radius:8px; font-weight:600;">
+                <mat-spinner *ngIf="changingPassword" diameter="20" style="display:inline-block; margin-right:8px;"></mat-spinner>
+                {{ changingPassword ? 'Changing...' : 'Change Password' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-container" style="min-height:300px;">
+    <mat-spinner diameter="40"></mat-spinner>
+  </div>
+</div>

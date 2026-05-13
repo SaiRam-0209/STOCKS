@@ -1,0 +1,111 @@
+<div class="fade-in">
+  <!-- Header Banner -->
+  <div class="admin-banner">
+    <div>
+      <div class="admin-banner__title">Admin Dashboard</div>
+      <div class="admin-banner__subtitle">AI Support Portal Management Console</div>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button mat-raised-button (click)="viewAIResponses()"
+              style="background:rgba(255,255,255,0.2); color:white; border-radius:8px;"
+              *ngIf="analytics && analytics.pendingAIResponses > 0">
+        <mat-icon>smart_toy</mat-icon>
+        {{ analytics.pendingAIResponses }} AI Pending
+      </button>
+      <button mat-raised-button (click)="viewAllTickets()"
+              style="background:rgba(255,255,255,0.15); color:white; border-radius:8px;">
+        <mat-icon>list</mat-icon> All Tickets
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+    <div *ngFor="let card of statCards" class="stat-card" [style.borderTop]="'3px solid ' + card.color">
+      <div class="stat-card__icon" [style.background]="card.bg">
+        <mat-icon [style.color]="card.color">{{ card.icon }}</mat-icon>
+      </div>
+      <div class="stat-card__value" [style.color]="card.color">{{ getStatValue(card.key) }}</div>
+      <div class="stat-card__label">{{ card.label }}</div>
+    </div>
+  </div>
+
+  <!-- KPI Row -->
+  <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:24px;" *ngIf="analytics">
+    <div class="kpi-card">
+      <div class="kpi-card__label">Resolution Rate</div>
+      <div class="kpi-card__value" style="color:#2e7d32;">{{ analytics.resolutionRate | number:'1.0-1' }}%</div>
+      <mat-progress-bar mode="determinate" [value]="analytics.resolutionRate" color="primary" style="margin-top:8px; border-radius:4px;"></mat-progress-bar>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card__label">AI Approval Rate</div>
+      <div class="kpi-card__value" style="color:#7b1fa2;">{{ analytics.aiApprovalRate | number:'1.0-1' }}%</div>
+      <mat-progress-bar mode="determinate" [value]="analytics.aiApprovalRate" color="accent" style="margin-top:8px; border-radius:4px;"></mat-progress-bar>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card__label">Avg. Resolution Time</div>
+      <div class="kpi-card__value" style="color:#0277bd;">
+        {{ analytics.averageResolutionTimeHours ? (analytics.averageResolutionTimeHours | number:'1.0-1') + 'h' : 'N/A' }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Tickets -->
+  <div class="card">
+    <div class="card__header">
+      <div>
+        <div style="font-size:17px; font-weight:600;">Recent Tickets</div>
+        <div style="font-size:13px; color:#9e9e9e; margin-top:2px;">Latest support requests across all users</div>
+      </div>
+      <button mat-stroked-button color="primary" (click)="viewAllTickets()">View All</button>
+    </div>
+
+    <div *ngIf="loading" class="loading-container"><mat-spinner diameter="40"></mat-spinner></div>
+
+    <table *ngIf="!loading" mat-table [dataSource]="recentTickets" style="width:100%;">
+      <ng-container matColumnDef="ticket">
+        <th mat-header-cell *matHeaderCellDef>Ticket</th>
+        <td mat-cell *matCellDef="let t">
+          <div style="font-weight:600; color:#3949ab; font-size:12px;">{{ t.ticketNumber }}</div>
+          <div style="font-size:13px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.subject }}</div>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="user">
+        <th mat-header-cell *matHeaderCellDef>User</th>
+        <td mat-cell *matCellDef="let t" style="font-size:13px; color:#616161;">{{ t.userName }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="category">
+        <th mat-header-cell *matHeaderCellDef>Category</th>
+        <td mat-cell *matCellDef="let t" style="font-size:12px; color:#616161;">{{ t.category | titlecase }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="priority">
+        <th mat-header-cell *matHeaderCellDef>Priority</th>
+        <td mat-cell *matCellDef="let t"><span [class]="getPriorityClass(t.priority)">{{ t.priority | titlecase }}</span></td>
+      </ng-container>
+
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Status</th>
+        <td mat-cell *matCellDef="let t"><span [class]="getStatusClass(t.status)">{{ t.status | titlecase }}</span></td>
+      </ng-container>
+
+      <ng-container matColumnDef="date">
+        <th mat-header-cell *matHeaderCellDef>Created</th>
+        <td mat-cell *matCellDef="let t" style="font-size:12px; color:#9e9e9e;">{{ formatDate(t.createdAt) }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="action">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let t">
+          <button mat-icon-button (click)="viewTicket(t.id)"><mat-icon>open_in_new</mat-icon></button>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="['ticket','user','category','priority','status','date','action']"></tr>
+      <tr mat-row *matRowDef="let row; columns: ['ticket','user','category','priority','status','date','action'];"
+          (click)="viewTicket(row.id)" style="cursor:pointer;"></tr>
+    </table>
+  </div>
+</div>

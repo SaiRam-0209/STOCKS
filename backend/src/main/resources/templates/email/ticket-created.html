@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="UTF-8"/>
+<title>Ticket Created</title>
+<style>
+  body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; }
+  .wrapper { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+  .header { background: linear-gradient(135deg, #3f51b5, #1a237e); padding: 36px 30px; text-align: center; }
+  .header h1 { color: #fff; margin: 0; font-size: 24px; }
+  .badge { display: inline-block; background: rgba(255,255,255,0.2); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 12px; margin-top: 8px; }
+  .content { padding: 36px 30px; }
+  .ticket-card { background: #f8f9ff; border: 1px solid #e3e6f0; border-radius: 10px; padding: 24px; margin: 20px 0; }
+  .ticket-number { font-size: 20px; font-weight: 700; color: #3f51b5; margin-bottom: 16px; }
+  .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-label { color: #888; font-size: 13px; }
+  .detail-value { color: #333; font-weight: 500; font-size: 13px; }
+  .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; background: #e3f2fd; color: #1565c0; }
+  .priority-HIGH { background: #fff3e0; color: #e65100; }
+  .priority-CRITICAL { background: #fce4ec; color: #c62828; }
+  .priority-LOW { background: #e8f5e9; color: #2e7d32; }
+  .priority-MEDIUM { background: #fff8e1; color: #f57f17; }
+  .btn { display: block; width: fit-content; margin: 24px auto; background: linear-gradient(135deg, #3f51b5, #1a237e); color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; }
+  .footer { background: #f8f9fa; padding: 20px 30px; text-align: center; border-top: 1px solid #e9ecef; }
+  .footer p { color: #999; font-size: 12px; margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <div style="font-size:36px; margin-bottom:12px;">✅</div>
+    <h1>Ticket Created Successfully</h1>
+    <span class="badge">AI Support Portal</span>
+  </div>
+  <div class="content">
+    <p>Dear <strong th:text="${userName}">User</strong>,</p>
+    <p>Your support ticket has been received and is being processed. Our team (and AI) will review it shortly.</p>
+    <div class="ticket-card">
+      <div class="ticket-number" th:text="${ticketNumber}">TKT-20240101-0001</div>
+      <div class="detail-row">
+        <span class="detail-label">Subject</span>
+        <span class="detail-value" th:text="${subject}">Subject here</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Category</span>
+        <span class="detail-value" th:text="${category}">TECHNICAL</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Priority</span>
+        <span class="detail-value"><span class="status-badge" th:classappend="'priority-' + ${priority}" th:text="${priority}">MEDIUM</span></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Status</span>
+        <span class="detail-value"><span class="status-badge" th:text="${status}">OPEN</span></span>
+      </div>
+    </div>
+    <p>You'll receive updates when there are any changes to your ticket. You can also check the status at any time by visiting your dashboard.</p>
+    <a th:href="${ticketUrl}" class="btn">View Ticket →</a>
+  </div>
+  <div class="footer">
+    <p>© 2024 AI Support Portal. All rights reserved.</p>
+  </div>
+</div>
+</body>
+</html>

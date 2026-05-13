@@ -1,0 +1,114 @@
+<div class="fade-in">
+  <div class="page-header">
+    <button mat-icon-button (click)="cancel()" matTooltip="Back">
+      <mat-icon>arrow_back</mat-icon>
+    </button>
+    <div>
+      <div class="page-header__title">Create Support Ticket</div>
+      <div class="page-header__subtitle">Describe your issue and we'll help you resolve it</div>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 300px; gap:24px; align-items:start;">
+    <!-- Main Form -->
+    <div class="card">
+      <div class="card__content">
+        <form [formGroup]="form" (ngSubmit)="onSubmit()">
+
+          <!-- Subject -->
+          <mat-form-field appearance="outline" class="full-width" style="margin-bottom:16px;">
+            <mat-label>Subject *</mat-label>
+            <input matInput formControlName="subject"
+                   placeholder="Brief summary of your issue (e.g., Unable to login to account)">
+            <mat-hint align="end">{{ form.get('subject')?.value?.length || 0 }}/200</mat-hint>
+            <mat-error>{{ getError('subject') }}</mat-error>
+          </mat-form-field>
+
+          <!-- Category & Priority -->
+          <div class="form-row" style="margin-bottom:16px;">
+            <mat-form-field appearance="outline">
+              <mat-label>Category *</mat-label>
+              <mat-select formControlName="category">
+                <mat-option *ngFor="let cat of categories" [value]="cat.value">
+                  {{ cat.icon }} {{ cat.label }}
+                </mat-option>
+              </mat-select>
+              <mat-error>{{ getError('category') }}</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Priority *</mat-label>
+              <mat-select formControlName="priority">
+                <mat-option *ngFor="let p of priorities" [value]="p.value">
+                  <span [style.color]="p.color" style="font-weight:600;">● {{ p.label }}</span>
+                  <span style="color:#9e9e9e; font-size:12px; margin-left:8px;">– {{ p.desc }}</span>
+                </mat-option>
+              </mat-select>
+              <mat-error>{{ getError('priority') }}</mat-error>
+            </mat-form-field>
+          </div>
+
+          <!-- Description -->
+          <mat-form-field appearance="outline" class="full-width" style="margin-bottom:16px;">
+            <mat-label>Description *</mat-label>
+            <textarea matInput formControlName="description" rows="8"
+                      placeholder="Please describe your issue in detail. Include:&#10;• What happened&#10;• What you expected&#10;• Steps to reproduce&#10;• Any error messages you saw"></textarea>
+            <mat-hint align="start">Minimum 20 characters for better AI assistance</mat-hint>
+            <mat-hint align="end">{{ descLength }}/5000</mat-hint>
+            <mat-error>{{ getError('description') }}</mat-error>
+          </mat-form-field>
+
+          <!-- File Upload -->
+          <div style="margin-bottom:24px;">
+            <div style="font-size:14px; font-weight:500; margin-bottom:8px; color:#616161;">
+              Attachments (optional)
+            </div>
+            <app-file-upload (filesSelected)="onFilesSelected($event)" [maxFiles]="5"></app-file-upload>
+          </div>
+
+          <!-- Actions -->
+          <div class="form-actions">
+            <button mat-stroked-button type="button" (click)="cancel()" [disabled]="loading">
+              Cancel
+            </button>
+            <button mat-raised-button color="primary" type="submit" [disabled]="loading"
+                    style="min-width:160px; border-radius:8px; font-weight:600;">
+              <mat-spinner *ngIf="loading" diameter="20" style="display:inline-block; margin-right:8px;"></mat-spinner>
+              <mat-icon *ngIf="!loading" style="margin-right:6px;">send</mat-icon>
+              {{ loading ? 'Submitting...' : 'Submit Ticket' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Sidebar Guide -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <!-- AI Info -->
+      <div style="padding:20px; background:linear-gradient(135deg,#f3e5f5,#e8eaf6); border-radius:12px; border:1px solid #e1bee7;">
+        <div style="font-size:13px; font-weight:600; color:#7b1fa2; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+          <mat-icon style="font-size:18px; width:18px; height:18px;">smart_toy</mat-icon>
+          AI-Powered Support
+        </div>
+        <p style="font-size:12px; color:#616161; line-height:1.6; margin:0;">
+          Our AI will automatically summarize your issue and generate a preliminary response for admin review.
+        </p>
+      </div>
+
+      <!-- Priority Guide -->
+      <div class="card">
+        <div class="card__content" style="padding:16px;">
+          <div style="font-size:13px; font-weight:600; margin-bottom:12px; color:#616161;">Priority Guide</div>
+          <div *ngFor="let p of priorities" style="display:flex; align-items:flex-start; gap:8px; margin-bottom:10px;">
+            <span class="priority-dot" [class]="'priority-dot--' + p.value.toLowerCase()"
+                  style="margin-top:5px; flex-shrink:0;"></span>
+            <div>
+              <div style="font-size:12px; font-weight:600;" [style.color]="p.color">{{ p.label }}</div>
+              <div style="font-size:11px; color:#9e9e9e;">{{ p.desc }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

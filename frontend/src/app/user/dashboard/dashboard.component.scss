@@ -1,0 +1,64 @@
+.welcome-banner {
+  background: linear-gradient(135deg, #3949ab, #1a237e);
+  border-radius: 16px;
+  padding: 32px;
+  color: white;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  &__greeting {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 6px;
+
+    span { color: #90caf9; }
+  }
+
+  &__subtitle { opacity: 0.85; font-size: 14px; }
+
+  &__visual {
+    font-size: 80px;
+    opacity: 0.3;
+  }
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ticket-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+
+  &:last-child { border-bottom: none; }
+  &:hover { background: #f8f9ff; }
+
+  &__left { flex: 1; }
+  &__number { font-size: 12px; color: #3949ab; font-weight: 600; margin-bottom: 3px; }
+  &__subject { font-size: 14px; font-weight: 500; color: #212121; margin-bottom: 6px; }
+  &__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  &__right { display: flex; align-items: center; gap: 8px; }
+}
+
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: linear-gradient(135deg, #f3e5f5, #e8eaf6);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7b1fa2;
+  border: 1px solid #e1bee7;
+}

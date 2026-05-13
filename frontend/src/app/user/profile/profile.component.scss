@@ -1,0 +1,19 @@
+.avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3949ab, #1a237e);
+  color: white;
+  font-size: 32px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  box-shadow: 0 4px 16px rgba(57, 73, 171, 0.3);
+}
+
+.profile-stat {
+  &__value { font-size: 24px; font-weight: 700; color: #212121; }
+  &__label { font-size: 12px; color: #9e9e9e; }
+}

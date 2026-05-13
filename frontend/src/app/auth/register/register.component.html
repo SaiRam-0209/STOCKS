@@ -1,0 +1,99 @@
+<div class="auth-page">
+  <div class="auth-card fade-in" style="max-width:520px;">
+    <div class="auth-header">
+      <div class="auth-header__icon">✨</div>
+      <div class="auth-header__title">Create Account</div>
+      <div class="auth-header__subtitle">Join AI Support Portal today</div>
+    </div>
+
+    <div class="auth-body">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <!-- Name + Email -->
+        <div class="form-row" style="margin-bottom:12px;">
+          <mat-form-field appearance="outline">
+            <mat-label>Full Name *</mat-label>
+            <input matInput formControlName="name" placeholder="John Doe" autocomplete="name">
+            <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">person</mat-icon>
+            <mat-error>{{ getError('name') }}</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Email Address *</mat-label>
+            <input matInput type="email" formControlName="email" placeholder="you@example.com" autocomplete="email">
+            <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">email</mat-icon>
+            <mat-error>{{ getError('email') }}</mat-error>
+          </mat-form-field>
+        </div>
+
+        <!-- Password -->
+        <mat-form-field appearance="outline" class="full-width" style="margin-bottom:12px;">
+          <mat-label>Password *</mat-label>
+          <input matInput [type]="hidePassword ? 'password' : 'text'"
+                 formControlName="password" autocomplete="new-password">
+          <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">lock</mat-icon>
+          <button mat-icon-button matSuffix type="button" (click)="hidePassword = !hidePassword">
+            <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+          <mat-error>{{ getError('password') }}</mat-error>
+        </mat-form-field>
+
+        <!-- Password Strength -->
+        <div *ngIf="form.get('password')?.value" style="margin-bottom:16px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <div style="flex:1; height:4px; background:#e0e0e0; border-radius:4px; overflow:hidden;">
+              <div [style.width]="(getPasswordStrength().level / 5 * 100) + '%'"
+                   [style.background]="getPasswordStrength().color"
+                   style="height:100%; border-radius:4px; transition:all 0.3s;"></div>
+            </div>
+            <span [style.color]="getPasswordStrength().color" style="font-size:12px; font-weight:600; width:50px;">
+              {{ getPasswordStrength().label }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Confirm Password -->
+        <mat-form-field appearance="outline" class="full-width" style="margin-bottom:12px;">
+          <mat-label>Confirm Password *</mat-label>
+          <input matInput [type]="hideConfirm ? 'password' : 'text'"
+                 formControlName="confirmPassword" autocomplete="new-password">
+          <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">lock_outline</mat-icon>
+          <button mat-icon-button matSuffix type="button" (click)="hideConfirm = !hideConfirm">
+            <mat-icon>{{ hideConfirm ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+          <mat-error>{{ getError('confirmPassword') }}</mat-error>
+        </mat-form-field>
+
+        <!-- Phone + Department -->
+        <div class="form-row" style="margin-bottom:20px;">
+          <mat-form-field appearance="outline">
+            <mat-label>Phone Number</mat-label>
+            <input matInput formControlName="phone" placeholder="+1234567890" autocomplete="tel">
+            <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">phone</mat-icon>
+            <mat-error>{{ getError('phone') }}</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Department</mat-label>
+            <input matInput formControlName="department" placeholder="IT Support">
+            <mat-icon matPrefix style="margin-right:8px; color:#9e9e9e;">business</mat-icon>
+            <mat-error>{{ getError('department') }}</mat-error>
+          </mat-form-field>
+        </div>
+
+        <button mat-raised-button color="primary" type="submit"
+                [disabled]="loading"
+                style="width:100%; height:48px; font-size:15px; font-weight:600; border-radius:10px;">
+          <mat-spinner *ngIf="loading" diameter="22" style="display:inline-block; margin-right:8px;"></mat-spinner>
+          {{ loading ? 'Creating Account...' : 'Create Account' }}
+        </button>
+      </form>
+
+      <div style="text-align:center; margin-top:20px; font-size:14px; color:#616161;">
+        Already have an account?
+        <a routerLink="/auth/login" style="color:#3949ab; font-weight:600; text-decoration:none; margin-left:4px;">
+          Sign in here
+        </a>
+      </div>
+    </div>
+  </div>
+</div>

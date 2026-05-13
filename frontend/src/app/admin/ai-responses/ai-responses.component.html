@@ -1,0 +1,61 @@
+<div class="fade-in">
+  <div style="margin-bottom:24px;">
+    <div class="page-header__title" style="display:flex; align-items:center; gap:8px;">
+      <mat-icon style="color:#7b1fa2; font-size:28px; width:28px; height:28px;">smart_toy</mat-icon>
+      AI Response Review
+    </div>
+    <div class="page-header__subtitle">{{ totalElements }} pending response{{ totalElements !== 1 ? 's' : '' }} awaiting review</div>
+  </div>
+
+  <div *ngIf="loading" class="loading-container" style="min-height:300px;"><mat-spinner diameter="40"></mat-spinner></div>
+
+  <div *ngIf="!loading && responses.length === 0" class="empty-state" style="min-height:300px;">
+    <div class="empty-state__icon" style="font-size:64px;">✅</div>
+    <div class="empty-state__title">All caught up!</div>
+    <div class="empty-state__subtitle">No AI responses are pending review</div>
+  </div>
+
+  <div *ngIf="!loading && responses.length > 0" style="display:flex; flex-direction:column; gap:16px;">
+    <div *ngFor="let resp of responses" class="card">
+      <div class="card__header">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#f3e5f5,#e8eaf6);
+                      display:flex; align-items:center; justify-content:center;">
+            <mat-icon style="color:#7b1fa2; font-size:20px; width:20px; height:20px;">smart_toy</mat-icon>
+          </div>
+          <div>
+            <div style="font-weight:600; font-size:14px; cursor:pointer; color:#3949ab;" (click)="viewTicket(resp.ticketId)">
+              Ticket #{{ resp.ticketId }} →
+            </div>
+            <div style="font-size:12px; color:#9e9e9e;">{{ formatDate(resp.createdAt) }}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span *ngIf="resp.confidenceScore" style="font-size:12px; padding:4px 10px; background:#e8f5e9; color:#2e7d32; border-radius:12px; font-weight:600;">
+            {{ (resp.confidenceScore * 100).toFixed(0) }}% confidence
+          </span>
+          <span class="badge" style="background:#fff8e1; color:#f57f17;">PENDING</span>
+        </div>
+      </div>
+      <div class="card__content">
+        <div style="background:#fafafa; border-radius:10px; padding:16px; border-left:4px solid #7b1fa2; margin-bottom:16px; font-size:14px; color:#424242; line-height:1.7; white-space:pre-wrap;">
+          {{ resp.response }}
+        </div>
+        <div style="display:flex; gap:12px; justify-content:flex-end;">
+          <button mat-stroked-button color="warn" (click)="review(resp.id, 'REJECTED')" style="border-radius:8px;">
+            <mat-icon>close</mat-icon> Reject
+          </button>
+          <button mat-raised-button color="primary" (click)="review(resp.id, 'APPROVED')" style="border-radius:8px;">
+            <mat-icon>check</mat-icon> Approve & Send
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="totalPages > 1" style="display:flex; justify-content:center; align-items:center; gap:8px; margin-top:16px;">
+    <button mat-icon-button [disabled]="page === 0" (click)="changePage(page - 1)"><mat-icon>chevron_left</mat-icon></button>
+    <span style="font-size:13px; color:#616161;">Page {{ page + 1 }} of {{ totalPages }}</span>
+    <button mat-icon-button [disabled]="page >= totalPages - 1" (click)="changePage(page + 1)"><mat-icon>chevron_right</mat-icon></button>
+  </div>
+</div>
